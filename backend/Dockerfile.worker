@@ -1,0 +1,59 @@
+# Dockerfile.worker - Multi-stage build for BullMQ Worker Service
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install OpenSSL for Prisma
+RUN apk add --no-cache openssl
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev for build)
+RUN npm ci
+
+# Copy Prisma schema
+COPY prisma ./prisma/
+
+# Generate Prisma Client
+RUN npx prisma generate
+
+# Copy TypeScript config
+COPY tsconfig*.json ./
+
+# Copy source code
+COPY src ./src
+
+# Build application
+RUN npm run build
+
+# Production stage
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Install OpenSSL for Prisma
+RUN apk add --no-cache openssl
+
+ENV NODE_ENV=production
+
+# Copy package files
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Install production dependencies only
+RUN npm ci --omit=dev
+
+# Generate Prisma Client (needed at runtime)
+RUN npx prisma generate
+
+# Copy built application from builder
+COPY --from=builder /app/dist ./dist
+
+# Health check to verify Redis connectivity
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+  CMD node -e "require('redis').createClient({ url: process.env.REDIS_URL }).connect().then(()=>process.exit(0)).catch(()=>process.exit(1))"
+
+# Default command to run worker
+CMD ["node", "dist/workers/index.js"]
+
