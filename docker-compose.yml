@@ -1,0 +1,116 @@
+version: '3.9'
+
+services:
+  backend:
+    container_name: flowgenie-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./certs:/usr/src/app/certs
+    depends_on:
+      - db
+      - redis
+    networks:
+      - flowgenie-net
+    restart: always
+
+  ui: 
+    container_name: flowgenie-ui
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "8080:80"
+    depends_on:
+      - app
+    networks:
+      - flowgenie-net
+    restart: always
+
+  worker:
+    container_name: flowgenie-worker
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    networks:
+      - flowgenie-net
+    restart: always
+
+  db:
+    image: postgres:15
+    container_name: flowgenie-db
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - flowgenie-net
+    restart: always
+
+  redis:
+    image: redis:7
+    container_name: flowgenie-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - flowgenie-net
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: flowgenie-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - flowgenie-net
+    restart: always
+
+  grafana:
+    image: grafana/grafana:9.6
+    container_name: flowgenie-grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./monitoring/grafana.ini:/etc/grafana/grafana.ini
+      - ./certs:/etc/grafana/certs
+    depends_on:
+      - prometheus
+    networks:
+      - flowgenie-net
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    container_name: flowgenie-nginx
+    ports:
+      - "9090:443" # HTTPS for Prometheus
+    volumes:
+      - ./monitoring/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs
+    depends_on:
+      - prometheus
+    networks:
+      - flowgenie-net
+    restart: always
+
+volumes:
+  pgdata:
+
+networks:
+  flowgenie-net:
+    driver: bridge
