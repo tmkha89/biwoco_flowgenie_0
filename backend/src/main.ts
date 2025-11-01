@@ -1,0 +1,116 @@
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { AppModule } from './app.module';
+import * as fs from 'fs';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
+
+async function bootstrap() {
+  const configService = new ConfigService();
+  const port = configService.get<number>('PORT', 3000);
+
+  // Check if running in Docker or local with HTTPS cert
+  const certPath = '/usr/src/app/certs/localhost.pem';
+  const keyPath = '/usr/src/app/certs/localhost-key.pem';
+  const localCertPath = './certs/localhost.pem';
+  const localKeyPath = './certs/localhost-key.pem';
+
+  // Try to find certificate files
+  let certFile: string | undefined;
+  let keyFile: string | undefined;
+  
+  if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+    certFile = certPath;
+    keyFile = keyPath;
+  } else if (fs.existsSync(localCertPath) && fs.existsSync(localKeyPath)) {
+    certFile = localCertPath;
+    keyFile = localKeyPath;
+  } else if (fs.existsSync(certPath)) {
+    // Fallback: use same file for both cert and key (for self-signed certs)
+    certFile = certPath;
+    keyFile = certPath;
+  } else if (fs.existsSync(localCertPath)) {
+    certFile = localCertPath;
+    keyFile = localCertPath;
+  }
+
+  // Create app with HTTPS options if certs are available
+  let app;
+  if (certFile && keyFile) {
+    try {
+      const httpsOptions = {
+        key: fs.readFileSync(keyFile),
+        cert: fs.readFileSync(certFile),
+      };
+      app = await NestFactory.create(AppModule, { httpsOptions });
+      console.log('🔒 HTTPS enabled with local certificates');
+    } catch (error) {
+      console.warn('⚠️  Failed to load HTTPS certs, starting HTTP server');
+      app = await NestFactory.create(AppModule);
+    }
+  } else {
+    app = await NestFactory.create(AppModule);
+  }
+
+  // Enable CORS for OAuth callbacks and Swagger UI
+  const allowedOrigins = process.env.CORS_ORIGINS 
+    ? process.env.CORS_ORIGINS.split(',')
+    : [process.env.APP_URL || 'http://localhost:3000', process.env.FRONTEND_URL || 'http://localhost:3000'];
+
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  });
+
+  // Global validation pipe
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
+
+  // Setup Swagger documentation
+  const enableSwagger = process.env.ENABLE_SWAGGER !== 'false';
+  if (enableSwagger) {
+    // Get the underlying Express instance to use Express middleware
+    const httpAdapter = app.getHttpAdapter();
+    const instance = httpAdapter.getInstance();
+
+    instance.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+      customCss: '.swagger-ui .topbar { display: none }',
+      customSiteTitle: 'FlowGenie API Docs',
+      swaggerOptions: {
+        persistAuthorization: true,
+        displayRequestDuration: true,
+        filter: true,
+        showExtensions: true,
+        showCommonExtensions: true,
+      },
+      customCssUrl: undefined,
+    }));
+
+    // Serve Swagger JSON spec
+    instance.get('/api/docs-json', (req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.send(swaggerSpec);
+    });
+
+    console.log('📚 Swagger documentation available at /api/docs');
+    console.log('📄 Swagger JSON spec available at /api/docs-json');
+  } else {
+    console.log('ℹ️  Swagger documentation is disabled (ENABLE_SWAGGER=false)');
+  }
+
+  await app.listen(port);
+  const protocol = certFile && keyFile ? 'https' : 'http';
+  console.log(`🚀 Application is running on: ${protocol}://localhost:${port}`);
+}
+
+bootstrap();
+

@@ -19,33 +19,33 @@ services:
       - flowgenie-net
     restart: always
 
-  ui: 
-    container_name: flowgenie-ui
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    ports:
-      - "8080:80"
-    depends_on:
-      - app
-    networks:
-      - flowgenie-net
-    restart: always
+  # frontend: 
+  #   container_name: flowgenie-frontend
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "8080:80"
+  #   depends_on:
+  #     - app
+  #   networks:
+  #     - flowgenie-net
+  #   restart: always
 
-  worker:
-    container_name: flowgenie-worker
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.worker
-    env_file:
-      - .env
-    depends_on:
-      - redis
-    networks:
-      - flowgenie-net
-    restart: always
+  # worker:
+  #   container_name: flowgenie-worker
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile.worker
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - redis
+  #   networks:
+  #     - flowgenie-net
+  #   restart: always
 
   db:
     image: postgres:15
