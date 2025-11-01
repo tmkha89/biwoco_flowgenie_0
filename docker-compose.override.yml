@@ -1,0 +1,36 @@
+version: '3.9'
+
+# Override configuration for local development
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.override.yml up
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+      - ./certs:/usr/src/app/certs
+    environment:
+      - NODE_ENV=development
+    command: npm run start:dev
+    depends_on:
+      - db
+      - redis
+
+  db:
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER:-flowgenie_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-flowgenie_password}
+      POSTGRES_DB: ${DB_NAME:-flowgenie_db}
+
+  redis:
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+

@@ -19,20 +19,20 @@ services:
       - flowgenie-net
     restart: always
 
-  ui: 
-    container_name: flowgenie-ui
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    ports:
-      - "8080:80"
-    depends_on:
-      - app
-    networks:
-      - flowgenie-net
-    restart: always
+  # frontend: 
+  #   container_name: flowgenie-frontend
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "8080:80"
+  #   depends_on:
+  #     - app
+  #   networks:
+  #     - flowgenie-net
+  #   restart: always
 
   worker:
     container_name: flowgenie-worker
@@ -43,9 +43,16 @@ services:
       - .env
     depends_on:
       - redis
+      - db
     networks:
       - flowgenie-net
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('redis').createClient({ url: process.env.REDIS_URL }).connect().then(()=>process.exit(0)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   db:
     image: postgres:15

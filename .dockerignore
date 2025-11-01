@@ -1,0 +1,13 @@
+# .dockerignore (in the ./backend directory)
+
+# Standard ignore files
+.git
+.gitignore
+.env
+.env.*
+Dockerfile
+README.md
+
+# Ignore ALL dependencies and build artifacts from the host
+node_modules
+dist
