@@ -78,8 +78,8 @@ export class AuthController {
    */
 
   @Get('google')
-  async googleAuth(@Res() res: Response) {
-    const authUrl = await this.authService.getGoogleAuthUrl();
+  async googleAuth(@Res() res: Response): Promise<void> {
+    const authUrl = this.authService.getGoogleAuthUrl();
     return res.redirect(authUrl);
   }
 

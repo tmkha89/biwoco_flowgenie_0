@@ -3,6 +3,8 @@
 # dependencies
 */node_modules
 */dist
+*/node_modules/
+*/dist/
 */.pnp
 */.pnp.js
 */package-lock.json
@@ -44,3 +46,8 @@
 
 # documentation
 *.md
+
+# static files
+*.7z
+*.zip
+*.rar

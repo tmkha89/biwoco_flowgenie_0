@@ -6,6 +6,13 @@ import { RefreshTokenService } from './services/refresh-token.service';
 import { GoogleOAuthService } from './services/google-oauth.service';
 import { UsersService } from '../users/users.service';
 import { OAuthService } from '../oauth/oauth.service';
+
+// Mock bcrypt module
+jest.mock('bcrypt', () => ({
+  compare: jest.fn(),
+  hash: jest.fn(),
+}));
+
 import * as bcrypt from 'bcrypt';
 
 describe('AuthService', () => {
@@ -283,11 +290,11 @@ describe('AuthService', () => {
     };
 
     beforeEach(() => {
-      jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(true));
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
     });
 
     afterEach(() => {
-      jest.restoreAllMocks();
+      jest.clearAllMocks();
     });
 
     it('should successfully login with valid credentials', async () => {
@@ -364,11 +371,11 @@ describe('AuthService', () => {
     };
 
     beforeEach(() => {
-      jest.spyOn(bcrypt, 'hash').mockImplementation(() => Promise.resolve('$2b$10$hashedpassword'));
+      (bcrypt.hash as jest.Mock).mockResolvedValue('$2b$10$hashedpassword');
     });
 
     afterEach(() => {
-      jest.restoreAllMocks();
+      jest.clearAllMocks();
     });
 
     it('should successfully signup new user', async () => {

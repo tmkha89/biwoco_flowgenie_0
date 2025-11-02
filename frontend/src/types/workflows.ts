@@ -4,7 +4,7 @@
  */
 
 export enum TriggerType {
-  GOOGLE = 'google',
+  GOOGLE_MAIL = 'google-mail',
   WEBHOOK = 'webhook',
   MANUAL = 'manual',
   SCHEDULE = 'schedule',

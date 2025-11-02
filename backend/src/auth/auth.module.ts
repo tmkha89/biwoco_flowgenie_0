@@ -33,7 +33,7 @@ import { OAuthModule } from '../oauth/oauth.module';
   providers: [
     AuthService,
     JwtStrategy,
-    GoogleOAuthStrategy,
+    GoogleOAuthStrategy, // Strategy now handles missing credentials gracefully
     JwtService,
     RefreshTokenService,
     GoogleOAuthService,

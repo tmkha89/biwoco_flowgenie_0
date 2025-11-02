@@ -176,7 +176,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
           properties: {
             type: {
               type: 'string',
-              enum: ['google', 'webhook', 'manual', 'schedule'],
+              enum: ['google-mail', 'webhook', 'manual', 'schedule'],
               example: 'manual',
             },
             config: {

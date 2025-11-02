@@ -26,34 +26,46 @@ export class GoogleOAuthService {
   private readonly clientId: string;
   private readonly clientSecret: string;
   private readonly redirectUri: string;
+  private readonly isEnabled: boolean;
 
   constructor(private configService: ConfigService) {
-    this.clientId = this.configService.get<string>('GOOGLE_CLIENT_ID', '');
-    this.clientSecret = this.configService.get<string>('GOOGLE_CLIENT_SECRET', '');
-    this.redirectUri = this.configService.get<string>(
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID', '');
+    const clientSecret = this.configService.get<string>('GOOGLE_CLIENT_SECRET', '');
+    const redirectUri = this.configService.get<string>(
       'GOOGLE_REDIRECT_URI',
       '',
     );
 
-    // Validate required OAuth credentials
-    if (!this.clientId || this.clientId.trim() === '') {
-      throw new Error(
-        'Google OAuth clientID is required. Please set GOOGLE_CLIENT_ID environment variable.',
+    // Check if all credentials are provided
+    const hasAllCredentials =
+      clientId && clientId.trim() !== '' &&
+      clientSecret && clientSecret.trim() !== '' &&
+      redirectUri && redirectUri.trim() !== '';
+
+    if (!hasAllCredentials) {
+      // Log warning but don't throw - allows app to start without OAuth
+      console.warn(
+        '⚠️  Google OAuth Service: Credentials not provided. Google OAuth functionality will be disabled.',
       );
-    }
-    if (!this.clientSecret || this.clientSecret.trim() === '') {
-      throw new Error(
-        'Google OAuth clientSecret is required. Please set GOOGLE_CLIENT_SECRET environment variable.',
-      );
-    }
-    if (!this.redirectUri || this.redirectUri.trim() === '') {
-      throw new Error(
-        'Google OAuth redirect URI is required. Please set GOOGLE_REDIRECT_URI environment variable.',
-      );
+      this.isEnabled = false;
+      this.clientId = '';
+      this.clientSecret = '';
+      this.redirectUri = '';
+    } else {
+      this.isEnabled = true;
+      this.clientId = clientId;
+      this.clientSecret = clientSecret;
+      this.redirectUri = redirectUri;
     }
   }
 
   getAuthorizationUrl(state?: string): string {
+    if (!this.isEnabled) {
+      throw new Error(
+        'Google OAuth is not configured. Please set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI environment variables.',
+      );
+    }
+
     const params = new URLSearchParams({
       client_id: this.clientId,
       redirect_uri: this.redirectUri,
@@ -71,6 +83,12 @@ export class GoogleOAuthService {
   }
 
   async exchangeCodeForTokens(code: string): Promise<GoogleTokenResponse> {
+    if (!this.isEnabled) {
+      throw new Error(
+        'Google OAuth is not configured. Please set required environment variables.',
+      );
+    }
+
     const params = new URLSearchParams({
       code,
       client_id: this.clientId,

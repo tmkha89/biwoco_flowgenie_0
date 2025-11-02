@@ -254,7 +254,7 @@ const WorkflowEditorPage = () => {
             >
               <option value={TriggerType.MANUAL}>Manual</option>
               <option value={TriggerType.WEBHOOK}>Webhook</option>
-              <option value={TriggerType.GOOGLE}>Google</option>
+              <option value={TriggerType.GOOGLE_MAIL}>Google-Mail</option>
               <option value={TriggerType.SCHEDULE}>Schedule</option>
             </select>
           </div>

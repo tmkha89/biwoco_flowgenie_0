@@ -1,4 +1,5 @@
 import { Module, Inject } from '@nestjs/common';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowService } from './workflow.service';
 import { ExecutionService } from './execution.service';
@@ -12,9 +13,21 @@ import { DatabaseModule } from '../database/database.module';
 import { Queue } from 'bullmq';
 import { getRedisConnectionObject } from '../queues/queue.config';
 
+// Services
+import { WorkflowEventService } from './services/workflow-event.service';
+import { GmailService } from './services/gmail.service';
+
 // Trigger handlers
 import { ManualTriggerHandler } from './triggers/manual.trigger';
 import { WebhookTriggerHandler } from './triggers/webhook.trigger';
+import { GoogleMailTriggerHandler } from './triggers/google-mail.trigger';
+import { ScheduleTriggerHandler } from './triggers/schedule.trigger';
+
+// Controllers
+import { TriggerController } from './controllers/trigger.controller';
+
+// Listeners
+import { WorkflowTriggerListener } from './listeners/workflow-trigger.listener';
 
 // Action handlers
 import { ExampleActionHandler } from './actions/example.action';
@@ -26,8 +39,11 @@ import { LoopActionHandler } from './actions/loop.action';
 import { ParallelActionHandler } from './actions/parallel.action';
 
 @Module({
-  imports: [DatabaseModule],
-  controllers: [WorkflowController],
+  imports: [
+    DatabaseModule,
+    EventEmitterModule.forRoot(),
+  ],
+  controllers: [WorkflowController, TriggerController],
   providers: [
     WorkflowService,
     ExecutionService,
@@ -37,9 +53,31 @@ import { ParallelActionHandler } from './actions/parallel.action';
     TriggerRegistry,
     ActionRegistry,
     ActionFactory,
+    // Services
+    WorkflowEventService,
+    GmailService,
     // Trigger handlers
     ManualTriggerHandler,
     WebhookTriggerHandler,
+    GoogleMailTriggerHandler,
+    ScheduleTriggerHandler,
+    // Listeners
+    WorkflowTriggerListener,
+    // Schedule queue (optional, for distributed scheduling)
+    {
+      provide: 'WORKFLOW_SCHEDULE_QUEUE',
+      useFactory: () => {
+        try {
+          return new Queue('workflow-schedule', {
+            connection: getRedisConnectionObject(),
+          });
+        } catch (error) {
+          // If Redis is not available, return null
+          console.warn('Failed to create schedule queue, using in-memory scheduling only');
+          return null;
+        }
+      },
+    },
     // Action handlers
     ExampleActionHandler,
     HttpActionHandler,
@@ -78,12 +116,22 @@ import { ParallelActionHandler } from './actions/parallel.action';
         triggerRegistry: TriggerRegistry,
         manualTrigger: ManualTriggerHandler,
         webhookTrigger: WebhookTriggerHandler,
+        googleMailTrigger: GoogleMailTriggerHandler,
+        scheduleTrigger: ScheduleTriggerHandler,
       ) => {
         triggerRegistry.registerHandler(manualTrigger);
         triggerRegistry.registerHandler(webhookTrigger);
+        triggerRegistry.registerHandler(googleMailTrigger);
+        triggerRegistry.registerHandler(scheduleTrigger);
         return true;
       },
-      inject: [TriggerRegistry, ManualTriggerHandler, WebhookTriggerHandler],
+      inject: [
+        TriggerRegistry,
+        ManualTriggerHandler,
+        WebhookTriggerHandler,
+        GoogleMailTriggerHandler,
+        ScheduleTriggerHandler,
+      ],
     },
     // Register action handlers
     {

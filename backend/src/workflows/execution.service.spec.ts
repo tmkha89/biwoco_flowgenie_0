@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionService } from './execution.service';
 import { ExecutionRepository } from './repositories/execution.repository';
 import { ActionRegistry } from './actions/action.registry';
+import { ActionFactory } from './actions/action.factory';
 
 describe('ExecutionService', () => {
   let service: ExecutionService;
@@ -10,7 +11,13 @@ describe('ExecutionService', () => {
 
   beforeEach(async () => {
     const mockExecutionRepository = {
-      findById: jest.fn(),
+      findById: jest.fn().mockResolvedValue({
+        id: 1,
+        workflowId: 1,
+        userId: 1,
+        status: 'pending',
+        executionSteps: [],
+      }),
       findByWorkflowId: jest.fn(),
       findByUserId: jest.fn(),
       update: jest.fn(),
@@ -20,6 +27,10 @@ describe('ExecutionService', () => {
 
     const mockActionRegistry = {
       getHandler: jest.fn(),
+    };
+
+    const mockActionFactory = {
+      createAction: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -32,6 +43,10 @@ describe('ExecutionService', () => {
         {
           provide: ActionRegistry,
           useValue: mockActionRegistry,
+        },
+        {
+          provide: ActionFactory,
+          useValue: mockActionFactory,
         },
       ],
     }).compile();

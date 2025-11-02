@@ -2,8 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { WorkflowService } from './workflow.service';
 import { WorkflowRepository } from './repositories/workflow.repository';
 import { ExecutionRepository } from './repositories/execution.repository';
+import { WorkflowRelationshipHelper } from './repositories/workflow.relationship.helper';
 import { TriggerRegistry } from './triggers/trigger.registry';
 import { ActionRegistry } from './actions/action.registry';
+import { PrismaService } from '../database/prisma.service';
 import { Queue } from 'bullmq';
 import { getRedisConnectionObject } from '../queues/queue.config';
 
@@ -45,6 +47,22 @@ describe('WorkflowService', () => {
 
     const mockActionRegistry = {
       getHandler: jest.fn(),
+      getRegisteredTypes: jest.fn().mockReturnValue(['http_request', 'email', 'wait']),
+    };
+
+    const mockWorkflowRelationshipHelper = {
+      updateActionRelationships: jest.fn(),
+    };
+
+    const mockPrismaService = {
+      action: {
+        create: jest.fn(),
+        update: jest.fn(),
+        deleteMany: jest.fn(),
+      },
+      trigger: {
+        update: jest.fn(),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -59,12 +77,20 @@ describe('WorkflowService', () => {
           useValue: mockExecutionRepository,
         },
         {
+          provide: WorkflowRelationshipHelper,
+          useValue: mockWorkflowRelationshipHelper,
+        },
+        {
           provide: TriggerRegistry,
           useValue: mockTriggerRegistry,
         },
         {
           provide: ActionRegistry,
           useValue: mockActionRegistry,
+        },
+        {
+          provide: PrismaService,
+          useValue: mockPrismaService,
         },
         {
           provide: 'WORKFLOW_QUEUE',
@@ -227,7 +253,7 @@ describe('WorkflowService', () => {
 
       const result = await service.findByUserId(userId);
 
-      expect(workflowRepository.findByUserId).toHaveBeenCalledWith(userId, {});
+      expect(workflowRepository.findByUserId).toHaveBeenCalledWith(userId, undefined);
       expect(result).toEqual(mockWorkflows);
     });
   });

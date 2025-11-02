@@ -3,7 +3,6 @@
 # Standard ignore files
 .git
 .gitignore
-.env
 .env.*
 Dockerfile
 README.md

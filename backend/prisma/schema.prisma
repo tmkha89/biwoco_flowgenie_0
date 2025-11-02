@@ -80,8 +80,8 @@ model Workflow {
 model Trigger {
   id         Int      @id @default(autoincrement())
   workflowId Int      @unique
-  type       String   // 'google', 'webhook', 'manual', 'schedule'
-  config     Json     // Trigger-specific configuration
+  type       String   // 'google-mail', 'webhook', 'manual', 'schedule'
+  config     Json     // Trigger-specific configuration (includes OAuth tokens, webhook IDs, cron expressions, etc.)
   positionX  Float?   // X position on canvas
   positionY  Float?   // Y position on canvas
   createdAt  DateTime @default(now())
