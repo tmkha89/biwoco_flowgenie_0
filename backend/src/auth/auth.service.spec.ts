@@ -119,6 +119,7 @@ describe('AuthService', () => {
       email: 'test@example.com',
       name: 'Test User',
       avatar: 'https://example.com/avatar.jpg',
+      password: '123456',
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -180,6 +181,7 @@ describe('AuthService', () => {
       email: 'test@example.com',
       name: 'Test User',
       avatar: null,
+      password: "123456",
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -240,6 +242,7 @@ describe('AuthService', () => {
         email: 'test@example.com',
         name: 'Test User',
         avatar: 'https://example.com/avatar.jpg',
+        password: '123456',
         createdAt: new Date(),
         updatedAt: new Date(),
       };
