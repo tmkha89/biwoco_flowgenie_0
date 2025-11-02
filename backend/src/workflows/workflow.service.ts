@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
+import { NotFoundException, BadRequestException, WorkflowException } from '../common/exceptions/custom-exceptions';
 import { WorkflowRepository } from './repositories/workflow.repository';
 import { ExecutionRepository } from './repositories/execution.repository';
 import { TriggerRegistry } from './triggers/trigger.registry';
@@ -22,7 +23,9 @@ export class WorkflowService {
     for (const action of createDto.actions) {
       const handler = this.actionRegistry.getHandler(action.type);
       if (!handler) {
-        throw new BadRequestException(`Action type "${action.type}" is not registered`);
+        throw new BadRequestException(
+          `Action type "${action.type}" is not registered. Available types: ${this.actionRegistry.getRegisteredTypes().join(', ')}`,
+        );
       }
     }
 
@@ -67,11 +70,11 @@ export class WorkflowService {
     const workflow = await this.workflowRepository.findById(id);
 
     if (!workflow) {
-      throw new NotFoundException(`Workflow with ID ${id} not found`);
+      throw new NotFoundException('Workflow', id);
     }
 
     if (workflow.userId !== userId) {
-      throw new NotFoundException(`Workflow with ID ${id} not found`);
+      throw new NotFoundException('Workflow', id);
     }
 
     return workflow;
@@ -120,11 +123,11 @@ export class WorkflowService {
     const workflow = await this.workflowRepository.findById(workflowId);
 
     if (!workflow) {
-      throw new NotFoundException(`Workflow with ID ${workflowId} not found`);
+      throw new NotFoundException('Workflow', workflowId);
     }
 
     if (!workflow.enabled) {
-      throw new BadRequestException(`Workflow with ID ${workflowId} is disabled`);
+      throw new WorkflowException(`Workflow ${workflowId} is disabled and cannot be executed`);
     }
 
     // Create execution

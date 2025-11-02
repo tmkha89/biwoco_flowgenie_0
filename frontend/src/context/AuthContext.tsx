@@ -42,21 +42,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
 
   const logout = () => {
+    console.log('🚪 [AuthContext] logout() called');
     setUser(null);
     setAccessToken(null);
     setRefreshTokenValue(null);
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    console.log('🚪 [AuthContext] State cleared, redirecting to login');
     navigate('/login');
   };
 
 
   const fetchUser = async (access: string) => {
+    console.log('👤 [AuthContext] fetchUser() called');
     try {
         const userData = await getCurrentUser(access);
+        console.log('👤 [AuthContext] User data received:', { id: userData.id, email: userData.email });
         setUser(userData);
+        console.log('✅ [AuthContext] User state updated');
     } catch (error) {
-        console.error("Failed to fetch user after login", error);
+        console.error("❌ [AuthContext] Failed to fetch user after login", error);
         // If fetching user fails, log out to clear bad tokens
         logout();
         throw error;
@@ -64,27 +69,35 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const login = async (email: string, password: string) => {
+    console.log('🔑 [AuthContext] login() called');
     // 1. Call API
     const data = await apiLogin(email, password);
     const { access_token, refresh_token } = data;
+    console.log('🔑 [AuthContext] Tokens received, setting tokens...');
     
     // 2. Update state and localStorage
     setTokens(access_token, refresh_token);
+    console.log('🔑 [AuthContext] Tokens stored, fetching user...');
     
     // 3. Fetch and set user (assuming access_token is valid now)
     await fetchUser(access_token);
+    console.log('✅ [AuthContext] Login complete, user authenticated');
   };
 
   const loginWithGoogle = async (token: string) => {
+    console.log('🔑 [AuthContext] loginWithGoogle() called');
     // 1. Call API
     const data = await apiGoogleLogin(token);
     const { access_token, refresh_token } = data;
+    console.log('🔑 [AuthContext] Tokens received, setting tokens...');
     
     // 2. Update state and localStorage
     setTokens(access_token, refresh_token);
+    console.log('🔑 [AuthContext] Tokens stored, fetching user...');
     
     // 3. Fetch and set user (assuming access_token is valid now)
     await fetchUser(access_token);
+    console.log('✅ [AuthContext] Google login complete, user authenticated');
   };
 
   // ----------------------------------------------------------------------------------------------------------------
@@ -93,32 +106,42 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const checkAuthStatus = async () => {
+      console.log('🔍 [AuthContext] Checking auth status on mount...');
       const storedAccess = localStorage.getItem('access_token');
       const storedRefresh = localStorage.getItem('refresh_token');
 
       if (storedAccess && storedRefresh) {
+        console.log('🔍 [AuthContext] Found stored tokens');
         setAccessToken(storedAccess);
         setRefreshTokenValue(storedRefresh);
         
         try {
           // 1. Try to fetch user with stored access token
+          console.log('🔍 [AuthContext] Attempting to fetch user with stored token...');
           await getCurrentUser(storedAccess).then(setUser);
+          console.log('✅ [AuthContext] User authenticated with stored token');
         } catch (error) {
           // 2. If access token is bad, try to refresh it
+          console.log('⚠️ [AuthContext] Stored token invalid, attempting refresh...');
           try {
             const { access_token } = await apiRefreshToken(storedRefresh);
             setAccessToken(access_token);
             localStorage.setItem('access_token', access_token);
+            console.log('✅ [AuthContext] Token refreshed successfully');
             // 3. Fetch user with the new access token
             await getCurrentUser(access_token).then(setUser);
           } catch (refreshError) {
             // 4. If refresh fails, log out
+            console.error('❌ [AuthContext] Token refresh failed, logging out', refreshError);
             logout();
           }
         }
+      } else {
+        console.log('🔍 [AuthContext] No stored tokens found');
       }
       
       // 5. CRITICAL: Set initializing to false ONLY after all checks are done
+      console.log('✅ [AuthContext] Auth status check complete');
       setIsInitializing(false); 
     };
 

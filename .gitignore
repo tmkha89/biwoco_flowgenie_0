@@ -2,6 +2,7 @@
 
 # dependencies
 */node_modules
+*/dist
 */.pnp
 */.pnp.js
 
@@ -34,3 +35,6 @@
 # typescript
 */*.tsbuildinfo
 */next-env.d.ts
+
+# documentation
+*.md

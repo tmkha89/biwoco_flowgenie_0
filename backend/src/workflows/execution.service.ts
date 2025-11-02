@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { NotFoundException, ExecutionException } from '../common/exceptions/custom-exceptions';
 import { ExecutionRepository } from './repositories/execution.repository';
 import { ActionRegistry } from './actions/action.registry';
 import { ExecutionContext, ExecutionStepStatus, WorkflowStatus } from './interfaces/workflow.interface';
@@ -14,11 +15,11 @@ export class ExecutionService {
     const execution = await this.executionRepository.findById(id);
 
     if (!execution) {
-      throw new NotFoundException(`Execution with ID ${id} not found`);
+      throw new NotFoundException('Execution', id);
     }
 
     if (execution.userId !== userId) {
-      throw new NotFoundException(`Execution with ID ${id} not found`);
+      throw new NotFoundException('Execution', id);
     }
 
     return execution;
@@ -47,7 +48,7 @@ export class ExecutionService {
     const execution = await this.executionRepository.findById(executionId);
 
     if (!execution) {
-      throw new NotFoundException(`Execution with ID ${executionId} not found`);
+      throw new NotFoundException('Execution', executionId);
     }
 
     if (execution.status !== WorkflowStatus.PENDING) {

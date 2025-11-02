@@ -16,6 +16,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/exceptions/http-exception.filter';
 import * as fs from 'fs';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
@@ -79,12 +80,29 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
+  // Global exception filter
+  app.useGlobalFilters(new AllExceptionsFilter());
+
   // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       transform: true,
       forbidNonWhitelisted: true,
+      exceptionFactory: (errors) => {
+        // Format validation errors for better readability
+        const messages = errors.map((error) => {
+          const constraints = Object.values(error.constraints || {});
+          return constraints.length > 0
+            ? `${error.property}: ${constraints.join(', ')}`
+            : `${error.property}: invalid value`;
+        });
+        const BadRequestException = require('@nestjs/common').BadRequestException;
+        return new BadRequestException({
+          message: 'Validation failed',
+          details: messages,
+        });
+      },
     }),
   );
 

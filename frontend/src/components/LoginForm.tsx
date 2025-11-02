@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext' 
 import { GoogleLogin } from '@react-oauth/google'
 import { jwtDecode } from 'jwt-decode'
 
 const LoginForm = () => {
+  const navigate = useNavigate()
   const { login, loginWithGoogle } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -12,13 +14,17 @@ const LoginForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('🔐 [LoginForm] Form submitted', { email: email.replace(/\S(?=\S{3})/g, '*') }) // Mask email
     setError(null)
     setLoading(true)
 
     try {
+      console.log('🔐 [LoginForm] Calling login function...')
       await login(email, password) 
-      window.location.href = '/dashboard'
+      console.log('✅ [LoginForm] Login successful, redirecting to dashboard')
+      navigate('/dashboard', { replace: true })
     } catch (err: any) {
+      console.error('❌ [LoginForm] Login failed:', err)
       setError(err.message || 'Login failed')
     } finally {
       setLoading(false)
@@ -26,17 +32,20 @@ const LoginForm = () => {
   }
 
   const handleGoogleLogin = async (credentialResponse: any) => {
+    console.log('🔐 [LoginForm] Google login initiated')
     try {
       const token = credentialResponse.credential
       if (!token) throw new Error('No credential returned')
 
       const decoded: any = jwtDecode(token)
-      console.log('Google user decoded:', decoded)
+      console.log('🔐 [LoginForm] Google user decoded:', { email: decoded.email, name: decoded.name })
 
+      console.log('🔐 [LoginForm] Calling loginWithGoogle function...')
       await loginWithGoogle(token) 
-      window.location.href = '/dashboard'
+      console.log('✅ [LoginForm] Google login successful, redirecting to dashboard')
+      navigate('/dashboard', { replace: true })
     } catch (error) {
-      console.error(error)
+      console.error('❌ [LoginForm] Google login failed:', error)
       setError('Google Login Failed')
     }
   }
