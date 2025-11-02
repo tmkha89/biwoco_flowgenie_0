@@ -15,6 +15,8 @@ describe('AuthController', () => {
       refreshAccessToken: jest.fn(),
       logout: jest.fn(),
       getUserById: jest.fn(),
+      login: jest.fn(),
+      signup: jest.fn(),
     };
 
     mockResponse = {
@@ -67,41 +69,72 @@ describe('AuthController', () => {
       },
     };
 
-    it('should successfully handle OAuth callback', async () => {
+    it('should successfully handle OAuth callback and redirect', async () => {
+      const originalEnv = process.env.FRONTEND_URL;
+      process.env.FRONTEND_URL = 'http://localhost:5173';
+      
       authService.googleLogin.mockResolvedValue(mockAuthResponse);
 
       await controller.googleCallback('auth-code', undefined, mockResponse as Response);
 
       expect(authService.googleLogin).toHaveBeenCalledWith('auth-code');
-      expect(mockResponse.send).toHaveBeenCalled();
-      expect(mockResponse.send).toHaveBeenCalledWith(expect.stringContaining('OAUTH_SUCCESS'));
+      expect(mockResponse.redirect).toHaveBeenCalledWith(
+        expect.stringContaining('http://localhost:5173/oauth-redirect?access_token=jwt-token&refresh_token=refresh-token'),
+      );
+      
+      process.env.FRONTEND_URL = originalEnv;
     });
 
-    it('should return error if OAuth error is present', async () => {
+    it('should redirect with error if OAuth error is present', async () => {
+      const originalEnv = process.env.FRONTEND_URL;
+      process.env.FRONTEND_URL = 'http://localhost:5173';
+
       await controller.googleCallback(undefined, 'access_denied', mockResponse as Response);
 
       expect(authService.googleLogin).not.toHaveBeenCalled();
-      expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'OAuth error: access_denied' });
+      expect(mockResponse.redirect).toHaveBeenCalledWith(
+        expect.stringContaining('http://localhost:5173/login?oauthError='),
+      );
+      expect(mockResponse.redirect).toHaveBeenCalledWith(
+        expect.stringContaining(encodeURIComponent('OAuth error: access_denied')),
+      );
+      
+      process.env.FRONTEND_URL = originalEnv;
     });
 
-    it('should return error if code is missing', async () => {
+    it('should redirect with error if code is missing', async () => {
+      const originalEnv = process.env.FRONTEND_URL;
+      process.env.FRONTEND_URL = 'http://localhost:5173';
+
       await controller.googleCallback(undefined, undefined, mockResponse as Response);
 
       expect(authService.googleLogin).not.toHaveBeenCalled();
-      expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: 'Authorization code is required',
-      });
+      expect(mockResponse.redirect).toHaveBeenCalledWith(
+        expect.stringContaining('http://localhost:5173/login?oauthError='),
+      );
+      expect(mockResponse.redirect).toHaveBeenCalledWith(
+        expect.stringContaining(encodeURIComponent('Authorization code is missing')),
+      );
+      
+      process.env.FRONTEND_URL = originalEnv;
     });
 
-    it('should handle service errors', async () => {
+    it('should redirect with error on service errors', async () => {
+      const originalEnv = process.env.FRONTEND_URL;
+      process.env.FRONTEND_URL = 'http://localhost:5173';
+
       authService.googleLogin.mockRejectedValue(new Error('Service error'));
 
       await controller.googleCallback('auth-code', undefined, mockResponse as Response);
 
-      expect(mockResponse.status).toHaveBeenCalledWith(500);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Service error' });
+      expect(mockResponse.redirect).toHaveBeenCalledWith(
+        expect.stringContaining('http://localhost:5173/login?oauthError='),
+      );
+      expect(mockResponse.redirect).toHaveBeenCalledWith(
+        expect.stringContaining(encodeURIComponent('Service error')),
+      );
+      
+      process.env.FRONTEND_URL = originalEnv;
     });
   });
 
@@ -152,6 +185,60 @@ describe('AuthController', () => {
 
       expect(authService.getUserById).toHaveBeenCalledWith(1);
       expect(result).toEqual(expectedUserDto);
+    });
+  });
+
+  describe('login', () => {
+    it('should successfully login user', async () => {
+      const loginDto = {
+        email: 'test@example.com',
+        password: 'password123',
+      };
+      const expectedResult = {
+        access_token: 'jwt-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600,
+        user: {
+          id: 1,
+          email: 'test@example.com',
+          name: 'Test User',
+          avatar: null,
+        },
+      };
+
+      authService.login.mockResolvedValue(expectedResult);
+
+      const result = await controller.login(loginDto);
+
+      expect(authService.login).toHaveBeenCalledWith(loginDto);
+      expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('signup', () => {
+    it('should successfully signup new user', async () => {
+      const signupDto = {
+        name: 'New User',
+        email: 'newuser@example.com',
+        password: 'password123',
+      };
+      const expectedResult = {
+        access_token: 'jwt-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600,
+        user: {
+          id: 1,
+          email: 'newuser@example.com',
+          name: 'New User',
+        },
+      };
+
+      authService.signup.mockResolvedValue(expectedResult);
+
+      const result = await controller.signup(signupDto);
+
+      expect(authService.signup).toHaveBeenCalledWith(signupDto);
+      expect(result).toEqual(expectedResult);
     });
   });
 });
