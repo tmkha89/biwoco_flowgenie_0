@@ -35,6 +35,7 @@ try {
 
 // Import workers
 import { exampleWorker } from './example.worker';
+import { workflowWorker } from './workflow.worker';
 
 /**
  * Log prefix for worker messages
@@ -44,7 +45,7 @@ const LOG_PREFIX = '[Worker]';
 /**
  * Array to store all active workers for graceful shutdown
  */
-const workers = [exampleWorker];
+const workers = [exampleWorker, workflowWorker];
 
 /**
  * Graceful shutdown handler
@@ -101,7 +102,8 @@ async function start() {
   // Log all active workers
   console.log(`${LOG_PREFIX} Active workers:`);
   workers.forEach((worker) => {
-    console.log(`${LOG_PREFIX}   - ${worker.name} (concurrency: ${worker.opts.concurrency || 1})`);
+    const name = worker.name || 'unknown';
+    console.log(`${LOG_PREFIX}   - ${name}`);
   });
 
   console.log(`${LOG_PREFIX} ✅ Worker service started successfully`);

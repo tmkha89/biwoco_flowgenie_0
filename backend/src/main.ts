@@ -1,3 +1,17 @@
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load .env.local first (if exists), then .env as fallback
+// This ensures .env.local takes precedence before NestJS ConfigModule loads
+const envLocalPath = path.resolve(process.cwd(), '.env.local');
+const envPath = path.resolve(process.cwd(), '.env');
+
+if (require('fs').existsSync(envLocalPath)) {
+  dotenv.config({ path: envLocalPath, override: true });
+} else if (require('fs').existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+}
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';

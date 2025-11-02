@@ -126,6 +126,332 @@ const swaggerOptions: swaggerJsdoc.Options = {
             },
           },
         },
+        RetryConfig: {
+          type: 'object',
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['fixed', 'exponential'],
+              example: 'exponential',
+            },
+            delay: {
+              type: 'integer',
+              example: 2000,
+              description: 'Delay in milliseconds',
+            },
+          },
+        },
+        CreateAction: {
+          type: 'object',
+          required: ['type', 'name', 'config', 'order'],
+          properties: {
+            type: {
+              type: 'string',
+              example: 'example_action',
+              description: 'Action type identifier',
+            },
+            name: {
+              type: 'string',
+              example: 'Send Email',
+              description: 'Human-readable action name',
+            },
+            config: {
+              type: 'object',
+              additionalProperties: true,
+              example: { to: 'user@example.com', subject: 'Hello' },
+            },
+            order: {
+              type: 'integer',
+              example: 0,
+              description: 'Execution order (0-based)',
+            },
+            retryConfig: {
+              $ref: '#/components/schemas/RetryConfig',
+            },
+          },
+        },
+        CreateTrigger: {
+          type: 'object',
+          required: ['type', 'config'],
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['google', 'webhook', 'manual', 'schedule'],
+              example: 'manual',
+            },
+            config: {
+              type: 'object',
+              additionalProperties: true,
+              example: {},
+            },
+          },
+        },
+        CreateWorkflow: {
+          type: 'object',
+          required: ['name', 'trigger', 'actions'],
+          properties: {
+            name: {
+              type: 'string',
+              example: 'My Workflow',
+            },
+            description: {
+              type: 'string',
+              example: 'A sample workflow description',
+            },
+            enabled: {
+              type: 'boolean',
+              example: true,
+              default: true,
+            },
+            trigger: {
+              $ref: '#/components/schemas/CreateTrigger',
+            },
+            actions: {
+              type: 'array',
+              items: {
+                $ref: '#/components/schemas/CreateAction',
+              },
+            },
+          },
+        },
+        TriggerResponse: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'integer',
+              example: 1,
+            },
+            workflowId: {
+              type: 'integer',
+              example: 1,
+            },
+            type: {
+              type: 'string',
+              example: 'manual',
+            },
+            config: {
+              type: 'object',
+              additionalProperties: true,
+            },
+          },
+        },
+        ActionResponse: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'integer',
+              example: 1,
+            },
+            workflowId: {
+              type: 'integer',
+              example: 1,
+            },
+            type: {
+              type: 'string',
+              example: 'example_action',
+            },
+            name: {
+              type: 'string',
+              example: 'Send Email',
+            },
+            config: {
+              type: 'object',
+              additionalProperties: true,
+            },
+            order: {
+              type: 'integer',
+              example: 0,
+            },
+            retryConfig: {
+              type: 'object',
+              additionalProperties: true,
+            },
+          },
+        },
+        WorkflowResponse: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'integer',
+              example: 1,
+            },
+            userId: {
+              type: 'integer',
+              example: 1,
+            },
+            name: {
+              type: 'string',
+              example: 'My Workflow',
+            },
+            description: {
+              type: 'string',
+              example: 'A sample workflow',
+            },
+            enabled: {
+              type: 'boolean',
+              example: true,
+            },
+            trigger: {
+              $ref: '#/components/schemas/TriggerResponse',
+            },
+            actions: {
+              type: 'array',
+              items: {
+                $ref: '#/components/schemas/ActionResponse',
+              },
+            },
+            createdAt: {
+              type: 'string',
+              format: 'date-time',
+            },
+            updatedAt: {
+              type: 'string',
+              format: 'date-time',
+            },
+          },
+        },
+        ExecutionStepResponse: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'integer',
+              example: 1,
+            },
+            executionId: {
+              type: 'integer',
+              example: 1,
+            },
+            actionId: {
+              type: 'integer',
+              example: 1,
+            },
+            status: {
+              type: 'string',
+              enum: ['pending', 'running', 'completed', 'failed', 'skipped'],
+              example: 'completed',
+            },
+            order: {
+              type: 'integer',
+              example: 0,
+            },
+            input: {
+              type: 'object',
+              additionalProperties: true,
+              nullable: true,
+            },
+            output: {
+              type: 'object',
+              additionalProperties: true,
+              nullable: true,
+            },
+            error: {
+              type: 'string',
+              nullable: true,
+            },
+            retryCount: {
+              type: 'integer',
+              example: 0,
+            },
+            startedAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+            },
+            completedAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+            },
+          },
+        },
+        ExecutionResponse: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'integer',
+              example: 1,
+            },
+            workflowId: {
+              type: 'integer',
+              example: 1,
+            },
+            userId: {
+              type: 'integer',
+              example: 1,
+            },
+            status: {
+              type: 'string',
+              enum: ['pending', 'running', 'completed', 'failed', 'cancelled'],
+              example: 'completed',
+            },
+            triggerData: {
+              type: 'object',
+              additionalProperties: true,
+              nullable: true,
+            },
+            result: {
+              type: 'object',
+              additionalProperties: true,
+              nullable: true,
+            },
+            error: {
+              type: 'string',
+              nullable: true,
+            },
+            startedAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+            },
+            completedAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+            },
+            executionSteps: {
+              type: 'array',
+              items: {
+                $ref: '#/components/schemas/ExecutionStepResponse',
+              },
+            },
+            createdAt: {
+              type: 'string',
+              format: 'date-time',
+            },
+            updatedAt: {
+              type: 'string',
+              format: 'date-time',
+            },
+          },
+        },
+        TriggerWorkflow: {
+          type: 'object',
+          properties: {
+            triggerData: {
+              type: 'object',
+              additionalProperties: true,
+              nullable: true,
+              example: { event: 'user_signup', userId: 123 },
+            },
+          },
+        },
+        UpdateWorkflow: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              example: 'Updated Workflow Name',
+            },
+            description: {
+              type: 'string',
+              example: 'Updated description',
+            },
+            enabled: {
+              type: 'boolean',
+              example: true,
+            },
+          },
+        },
         Error: {
           type: 'object',
           properties: {
@@ -157,6 +483,10 @@ const swaggerOptions: swaggerJsdoc.Options = {
       {
         name: 'Users',
         description: 'User management endpoints',
+      },
+      {
+        name: 'Workflows',
+        description: 'Workflow management and execution endpoints',
       },
     ],
   },
