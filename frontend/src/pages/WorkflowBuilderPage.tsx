@@ -1,0 +1,127 @@
+/**
+ * Main Workflow Builder Page with drag-and-drop interface
+ */
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import Navbar from '../components/Navbar';
+import { useAuth } from '../context/AuthContext';
+import { useWorkflowBuilderStore } from '../store/workflow-builder.store';
+import { getWorkflowById } from '../api/workflows';
+import { convertFromBackendFormat } from '../utils/workflow-converter';
+import ActionSidebar from '../components/workflow-builder/ActionSidebar';
+import WorkflowCanvas from '../components/workflow-builder/WorkflowCanvas';
+import PropertiesPanel from '../components/workflow-builder/PropertiesPanel';
+import WorkflowToolbar from '../components/workflow-builder/WorkflowToolbar';
+import { ACTION_TYPES, ActionType } from '../types/workflow-builder';
+import { TriggerType } from '../types/workflows';
+import type { WorkflowResponse } from '../types/workflows';
+
+const WorkflowBuilderPage = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { isAuthenticated, isInitializing } = useAuth();
+  const { setNodes, setEdges, loadWorkflow, reset, nodes, addNode } = useWorkflowBuilderStore();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    console.log('🎨 [WorkflowBuilderPage] Component mounted', { isInitializing, isAuthenticated, workflowId: id });
+    if (!isInitializing && !isAuthenticated) {
+      console.log('🎨 [WorkflowBuilderPage] Not authenticated, redirecting to login');
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    if (id) {
+      console.log('🎨 [WorkflowBuilderPage] Loading existing workflow', { workflowId: id });
+      fetchWorkflow(parseInt(id));
+    } else {
+      console.log('🎨 [WorkflowBuilderPage] Creating new workflow');
+      reset();
+      // Add default trigger node at top center (30px from top)
+      // Center horizontally: approximately center of a standard canvas (assuming ~800px width, node is 150px wide)
+      // Center calculation: (canvas width / 2) - (node width / 2) ≈ 400 - 75 = 325
+      const { setNodes } = useWorkflowBuilderStore.getState();
+      setNodes([
+        {
+          id: 'trigger',
+          type: 'default',
+          position: { x: 325, y: 30 },
+          data: {
+            id: 'trigger',
+            type: 'trigger' as any,
+            name: 'Trigger',
+            config: {},
+          },
+          style: {
+            background: '#4F46E5',
+            color: 'white',
+            border: '2px solid #222',
+            borderRadius: '8px',
+            padding: '10px',
+            minWidth: 150,
+            textAlign: 'center',
+          },
+          deletable: false, // Prevent deletion
+          draggable: true, // Allow repositioning
+        },
+      ]);
+    }
+  }, [isAuthenticated, isInitializing, navigate, id]);
+
+  const fetchWorkflow = async (workflowId: number) => {
+    console.log('🎨 [WorkflowBuilderPage] fetchWorkflow() called', { workflowId });
+    try {
+      setIsLoading(true);
+      setError(null);
+      const workflow = await getWorkflowById(workflowId);
+      console.log('🎨 [WorkflowBuilderPage] Workflow fetched', { id: workflow.id, name: workflow.name });
+
+      // Convert backend format to React Flow format
+      const { nodes: flowNodes, edges: flowEdges } = convertFromBackendFormat(workflow);
+      setNodes(flowNodes);
+      setEdges(flowEdges);
+      loadWorkflow(workflow);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load workflow');
+      console.error('❌ [WorkflowBuilderPage] Error fetching workflow:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  if (isInitializing || isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-screen">
+      <Navbar />
+      <WorkflowToolbar workflowId={id ? parseInt(id) : undefined} />
+      
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 mx-4 mt-2 rounded">
+          {error}
+        </div>
+      )}
+
+      <div className="flex flex-1 overflow-hidden">
+        <ActionSidebar />
+        
+        <div className="flex-1 relative border-2 border-gray-300 bg-gray-50 m-2 rounded-lg overflow-hidden">
+          <WorkflowCanvas />
+        </div>
+
+        <PropertiesPanel />
+      </div>
+    </div>
+  );
+};
+
+export default WorkflowBuilderPage;
+

@@ -4,6 +4,7 @@ import DashboardPage from './pages/DashboardPage'
 import SignupPage from './pages/SignupPage'
 import WorkflowListPage from './pages/WorkflowListPage'
 import WorkflowEditorPage from './pages/WorkflowEditorPage'
+import WorkflowBuilderPage from './pages/WorkflowBuilderPage'
 import WorkflowRunPage from './pages/WorkflowRunPage'
 import ProtectedRoute from './routes/ProtectedRoute'
 import OAuthRedirectHandler from './components/OAuthRedirectHandler'
@@ -19,7 +20,8 @@ function App() {
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
             <Route path="/workflows" element={<ProtectedRoute><WorkflowListPage /></ProtectedRoute>} />
-            <Route path="/workflows/new" element={<ProtectedRoute><WorkflowEditorPage /></ProtectedRoute>} />
+            <Route path="/workflows/new" element={<ProtectedRoute><WorkflowBuilderPage /></ProtectedRoute>} />
+            <Route path="/workflows/:id/edit" element={<ProtectedRoute><WorkflowBuilderPage /></ProtectedRoute>} />
             <Route path="/workflows/:id" element={<ProtectedRoute><WorkflowEditorPage /></ProtectedRoute>} />
             <Route path="/workflows/:id/execute" element={<ProtectedRoute><WorkflowRunPage /></ProtectedRoute>} />
             <Route path="/oauth-redirect" element={<OAuthRedirectHandler />} />

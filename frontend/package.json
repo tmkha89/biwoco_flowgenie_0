@@ -10,11 +10,16 @@
   },
   "dependencies": {
     "@react-oauth/google": "^0.12.2",
+    "@types/react-dnd": "^2.0.36",
     "axios": "^1.7.7",
     "jwt-decode": "^4.0.0",
     "react": "^18.3.1",
+    "react-dnd": "^16.0.1",
+    "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.1"
+    "react-router-dom": "^6.26.1",
+    "reactflow": "^11.11.4",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.0",
