@@ -84,22 +84,86 @@ export function convertToBackendFormat(): CreateWorkflow {
       name: node.data.name,
       config,
       order,
+      positionX: node.position.x,
+      positionY: node.position.y,
       retryConfig: node.data.retryConfig,
       // Store nodeId temporarily for relationship building
       _nodeId: node.id,
     } as CreateAction & { _nodeId: string };
   });
 
-  // Build sequential relationships (nextActionId)
-  // For nodes with single outgoing edge (and not conditional/parallel/loop), set nextActionId
-  actions.forEach((action) => {
+  // Find trigger node and include position
+  const triggerNode = nodes.find((node) => node.data.type === 'trigger');
+  const triggerWithPosition = triggerNode
+    ? {
+        ...trigger,
+        positionX: triggerNode.position.x,
+        positionY: triggerNode.position.y,
+      }
+    : trigger;
+
+  // Build sequential relationships (nextActionOrder)
+  // For nodes with single outgoing edge (and not conditional/parallel/loop), set nextActionOrder
+  actions.forEach((action, index) => {
     const nodeId = (action as any)._nodeId;
     const targets = edgeMap.get(nodeId) || [];
 
-    // Note: nextActionId will be set by the backend after actions are created
-    // based on the order and edges. For sequential actions, the backend
-    // will determine nextActionId from the order field.
-    // Remove temporary _nodeId
+    // Set nextActionOrder for sequential actions
+    if (
+      action.type !== ActionType.PARALLEL &&
+      action.type !== ActionType.CONDITIONAL &&
+      action.type !== ActionType.LOOP &&
+      targets.length === 1
+    ) {
+      const nextOrder = nodeIdToOrder.get(targets[0]);
+      if (nextOrder !== undefined) {
+        action.nextActionOrder = nextOrder;
+        console.log(`🎨 [WorkflowConverter] Sequential: action at order ${index} -> nextActionOrder ${nextOrder}`);
+      }
+    }
+  });
+
+  // Build parent-child relationships (parentActionOrder)
+  // For parallel action children, set parentActionOrder
+  // Note: We already handle parallel children via config.actionIds, but we also set parentActionOrder
+  // for explicit parent-child relationship tracking
+  actions.forEach((action, index) => {
+    const nodeId = (action as any)._nodeId;
+    
+    // Check if this action is a child of a parallel action
+    // Find edges that point to this node (this node is a target)
+    edges.forEach((edge) => {
+      if (edge.target === nodeId) {
+        const sourceNode = nodes.find((n) => n.id === edge.source);
+        if (sourceNode && sourceNode.data.type === ActionType.PARALLEL) {
+          const parentOrder = nodeIdToOrder.get(sourceNode.id);
+          if (parentOrder !== undefined && action.type !== ActionType.PARALLEL) {
+            action.parentActionOrder = parentOrder;
+            console.log(`🎨 [WorkflowConverter] Parent-child: action at order ${index} -> parentActionOrder ${parentOrder} (parallel)`);
+          }
+        }
+      }
+    });
+
+    // Check if this action is a child of a loop action
+    // Loop children are identified by config.loopActionId in the loop action
+    actions.forEach((loopAction) => {
+      const loopNodeId = (loopAction as any)._nodeId;
+      if (loopAction.type === ActionType.LOOP && loopAction.config?.loopActionId !== undefined) {
+        const loopChildOrder = loopAction.config.loopActionId;
+        if (loopChildOrder === index && loopNodeId) {
+          const parentOrder = nodeIdToOrder.get(loopNodeId);
+          if (parentOrder !== undefined) {
+            action.parentActionOrder = parentOrder;
+            console.log(`🎨 [WorkflowConverter] Parent-child: action at order ${index} -> parentActionOrder ${parentOrder} (loop)`);
+          }
+        }
+      }
+    });
+  });
+
+  // Remove temporary _nodeId from all actions
+  actions.forEach((action) => {
     delete (action as any)._nodeId;
   });
 
@@ -111,7 +175,7 @@ export function convertToBackendFormat(): CreateWorkflow {
     name: workflowMeta.name,
     description: workflowMeta.description,
     enabled: workflowMeta.enabled,
-    trigger,
+    trigger: triggerWithPosition,
     actions,
   };
 }
@@ -123,15 +187,22 @@ export function convertFromBackendFormat(workflow: any): {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
 } {
+  console.log('🎨 [WorkflowConverter] convertFromBackendFormat called with workflow:', workflow);
+  console.log('🎨 [WorkflowConverter] Actions:', workflow.actions);
+  
   const nodes: WorkflowNode[] = [];
   const edges: WorkflowEdge[] = [];
 
-  // Add trigger node - always required, positioned at top center (30px from top)
+  // Add trigger node - always required, use saved position or default
+  const triggerPosition = workflow.trigger?.positionX !== undefined && workflow.trigger?.positionY !== undefined
+    ? { x: workflow.trigger.positionX, y: workflow.trigger.positionY }
+    : { x: 325, y: 30 }; // Default position
+
   if (workflow.trigger) {
     nodes.push({
       id: 'trigger',
       type: 'default',
-      position: { x: 325, y: 30 },
+      position: triggerPosition,
       data: {
         id: 'trigger',
         type: 'trigger' as any,
@@ -155,7 +226,7 @@ export function convertFromBackendFormat(workflow: any): {
     nodes.push({
       id: 'trigger',
       type: 'default',
-      position: { x: 325, y: 30 },
+      position: triggerPosition,
       data: {
         id: 'trigger',
         type: 'trigger' as any,
@@ -181,11 +252,23 @@ export function convertFromBackendFormat(workflow: any): {
   workflow.actions.forEach((action: any, index: number) => {
     const nodeId = `action-${action.id || index}`;
     actionIdToNodeId.set(action.id || index, nodeId);
+    console.log(`🎨 [WorkflowConverter] Mapping action ${action.id} -> ${nodeId}`, {
+      type: action.type,
+      config: action.config,
+      parentActionId: action.parentActionId,
+      nextActionId: action.nextActionId,
+      childActions: action.childActions,
+    });
+
+    // Use saved position or calculate default position
+    const actionPosition = action.positionX !== undefined && action.positionY !== undefined
+      ? { x: action.positionX, y: action.positionY }
+      : { x: 250 + (index % 4) * 200, y: 250 + Math.floor(index / 4) * 150 };
 
     nodes.push({
       id: nodeId,
       type: 'default',
-      position: { x: 250 + (index % 4) * 200, y: 250 + Math.floor(index / 4) * 150 },
+      position: actionPosition,
       data: {
         id: nodeId,
         type: action.type as ActionType,
@@ -196,32 +279,51 @@ export function convertFromBackendFormat(workflow: any): {
     });
   });
 
-  // Add edges based on nextActionId
-  workflow.actions.forEach((action: any, index: number) => {
-    const sourceNodeId = `action-${action.id || index}`;
+  // Find root actions (actions without parentActionId or with order 0)
+  const rootActions = workflow.actions.filter(
+    (action: any) => !action.parentActionId && action.order === 0
+  );
+  console.log(`🎨 [WorkflowConverter] Found ${rootActions.length} root actions:`, rootActions.map((a: any) => a.id));
 
-    // Connect trigger to first action
-    if (index === 0 && workflow.trigger) {
+  // Connect trigger to root action(s)
+  if (workflow.trigger && rootActions.length > 0) {
+    // For now, connect trigger to the first root action
+    const firstRootAction = rootActions[0];
+    const firstRootNodeId = actionIdToNodeId.get(firstRootAction.id);
+    console.log(`🎨 [WorkflowConverter] Connecting trigger to root action ${firstRootAction.id} (nodeId: ${firstRootNodeId})`);
+    if (firstRootNodeId) {
       edges.push({
-        id: `trigger-${sourceNodeId}`,
+        id: `trigger-${firstRootNodeId}`,
         source: 'trigger',
-        target: sourceNodeId,
+        target: firstRootNodeId,
         type: 'smoothstep',
         animated: true,
       });
+      console.log(`✅ [WorkflowConverter] Created trigger edge: trigger -> ${firstRootNodeId}`);
     }
+  }
 
-    // Connect to next action if exists
+  // Add edges based on nextActionId and parent-child relationships
+  workflow.actions.forEach((action: any, index: number) => {
+    const sourceNodeId = `action-${action.id || index}`;
+
+    // Connect to next action if exists (for sequential flow)
     if (action.nextActionId !== undefined && action.nextActionId !== null) {
       const targetNodeId = actionIdToNodeId.get(action.nextActionId);
       if (targetNodeId) {
-        edges.push({
-          id: `${sourceNodeId}-${targetNodeId}`,
-          source: sourceNodeId,
-          target: targetNodeId,
-          type: 'smoothstep',
-          animated: true,
-        });
+        // Check if edge already exists (avoid duplicates)
+        const existingEdge = edges.find(
+          (e) => e.source === sourceNodeId && e.target === targetNodeId,
+        );
+        if (!existingEdge) {
+          edges.push({
+            id: `${sourceNodeId}-next-${targetNodeId}`,
+            source: sourceNodeId,
+            target: targetNodeId,
+            type: 'smoothstep',
+            animated: true,
+          });
+        }
       }
     }
 
@@ -257,36 +359,148 @@ export function convertFromBackendFormat(workflow: any): {
       }
     }
 
-    // Connect parallel actions
+    // Connect parallel actions from config.actionIds
+    // This is the primary method - config.actionIds should contain real action IDs after saving
     if (action.type === ActionType.PARALLEL && action.config?.actionIds) {
-      action.config.actionIds.forEach((targetId: number) => {
-        const targetNodeId = actionIdToNodeId.get(targetId);
+      const actionIds = Array.isArray(action.config.actionIds) ? action.config.actionIds as number[] : [];
+      console.log(`🎨 [WorkflowConverter] Parallel action ${action.id} has actionIds:`, actionIds);
+      
+      if (actionIds.length === 0) {
+        console.warn(`⚠️ [WorkflowConverter] Parallel action ${action.id} has empty actionIds array`);
+      }
+      
+      actionIds.forEach((targetActionId: number) => {
+        const targetNodeId = actionIdToNodeId.get(targetActionId);
+        console.log(`🎨 [WorkflowConverter] Parallel action ${action.id} -> action ${targetActionId} (nodeId: ${targetNodeId})`);
         if (targetNodeId) {
-          edges.push({
-            id: `${sourceNodeId}-parallel-${targetNodeId}`,
-            source: sourceNodeId,
-            target: targetNodeId,
-            type: 'smoothstep',
-            animated: true,
-          });
+          // Check if edge already exists (avoid duplicates)
+          const existingEdge = edges.find(
+            (e) => e.source === sourceNodeId && e.target === targetNodeId,
+          );
+          if (!existingEdge) {
+            edges.push({
+              id: `${sourceNodeId}-parallel-${targetNodeId}`,
+              source: sourceNodeId,
+              target: targetNodeId,
+              type: 'smoothstep',
+              animated: true,
+            });
+            console.log(`✅ [WorkflowConverter] Created edge from config.actionIds: ${sourceNodeId} -> ${targetNodeId}`);
+          } else {
+            console.log(`⚠️ [WorkflowConverter] Edge already exists: ${sourceNodeId} -> ${targetNodeId}`);
+          }
+        } else {
+          console.warn(`⚠️ [WorkflowConverter] Could not find nodeId for action ${targetActionId} in actionIdToNodeId map`);
+          console.warn(`⚠️ [WorkflowConverter] Available action IDs in map:`, Array.from(actionIdToNodeId.keys()));
         }
       });
+    }
+    
+    // Also check for childActions relationship (if available in response)
+    // This is a fallback if actionIds is not set correctly
+    if (action.type === ActionType.PARALLEL && action.childActions && Array.isArray(action.childActions) && action.childActions.length > 0) {
+      console.log(`🎨 [WorkflowConverter] Parallel action ${action.id} has childActions:`, action.childActions);
+      action.childActions.forEach((childAction: any) => {
+        const childId = typeof childAction === 'object' ? childAction.id : childAction;
+        const targetNodeId = actionIdToNodeId.get(childId);
+        if (targetNodeId) {
+          // Check if edge already exists (avoid duplicates)
+          const existingEdge = edges.find(
+            (e) => e.source === sourceNodeId && e.target === targetNodeId,
+          );
+          if (!existingEdge) {
+            edges.push({
+              id: `${sourceNodeId}-parallel-child-${targetNodeId}`,
+              source: sourceNodeId,
+              target: targetNodeId,
+              type: 'smoothstep',
+              animated: true,
+            });
+            console.log(`✅ [WorkflowConverter] Created edge from childActions: ${sourceNodeId} -> ${targetNodeId}`);
+          } else {
+            console.log(`⚠️ [WorkflowConverter] Edge from childActions already exists: ${sourceNodeId} -> ${targetNodeId}`);
+          }
+        } else {
+          console.warn(`⚠️ [WorkflowConverter] Could not find nodeId for childAction ${childId}`);
+        }
+      });
+    }
+
+    // Handle parent-child relationships from parentActionId
+    // This creates edges FROM the parent TO this child action
+    // This is important for parallel/loop children, especially if config.actionIds is missing or incomplete
+    if (action.parentActionId) {
+      const parentNodeId = actionIdToNodeId.get(action.parentActionId);
+      console.log(`🎨 [WorkflowConverter] Action ${action.id} has parentActionId: ${action.parentActionId} (parentNodeId: ${parentNodeId})`);
+      if (parentNodeId) {
+        // Check if edge already exists (avoid duplicates)
+        const existingEdge = edges.find(
+          (e) => e.source === parentNodeId && e.target === sourceNodeId,
+        );
+        if (!existingEdge) {
+          // Find parent action to determine its type
+          const parentAction = workflow.actions.find((a: any) => a.id === action.parentActionId);
+          console.log(`🎨 [WorkflowConverter] Found parent action:`, parentAction);
+          
+          if (parentAction) {
+            const isLoop = parentAction.type === ActionType.LOOP;
+            const isParallel = parentAction.type === ActionType.PARALLEL;
+            
+            // Always create edge from parent to child if parentActionId exists
+            // The duplicate check above ensures we don't create duplicate edges
+            // For parallel actions, this is a fallback if config.actionIds doesn't work
+            // For loop actions, this is the primary method
+            edges.push({
+              id: `${parentNodeId}-parent-${sourceNodeId}`,
+              source: parentNodeId,
+              target: sourceNodeId,
+              type: 'smoothstep',
+              animated: true,
+              label: isLoop ? 'loop' : undefined,
+            });
+            console.log(`✅ [WorkflowConverter] Created edge from parentActionId: ${parentNodeId} -> ${sourceNodeId} (parent type: ${parentAction.type})`);
+          } else {
+            console.warn(`⚠️ [WorkflowConverter] Parent action ${action.parentActionId} not found in workflow.actions`);
+          }
+        } else {
+          console.log(`ℹ️ [WorkflowConverter] Edge already exists from parentActionId: ${parentNodeId} -> ${sourceNodeId} (likely created from config.actionIds or other method)`);
+        }
+      } else {
+        console.warn(`⚠️ [WorkflowConverter] Could not find parentNodeId for parentActionId ${action.parentActionId}`);
+        console.warn(`⚠️ [WorkflowConverter] Available action IDs in map:`, Array.from(actionIdToNodeId.keys()));
+      }
     }
 
     // Connect loop action
     if (action.type === ActionType.LOOP && action.config?.loopActionId !== undefined) {
       const loopTargetId = actionIdToNodeId.get(action.config.loopActionId);
       if (loopTargetId) {
-        edges.push({
-          id: `${sourceNodeId}-loop-${loopTargetId}`,
-          source: sourceNodeId,
-          target: loopTargetId,
-          type: 'smoothstep',
-          animated: true,
-          label: 'loop',
-        });
+        // Check if edge already exists (avoid duplicates)
+        const existingEdge = edges.find(
+          (e) => e.source === sourceNodeId && e.target === loopTargetId,
+        );
+        if (!existingEdge) {
+          edges.push({
+            id: `${sourceNodeId}-loop-${loopTargetId}`,
+            source: sourceNodeId,
+            target: loopTargetId,
+            type: 'smoothstep',
+            animated: true,
+            label: 'loop',
+          });
+          console.log(`✅ [WorkflowConverter] Created loop edge: ${sourceNodeId} -> ${loopTargetId}`);
+        }
       }
     }
+  });
+
+  console.log(`🎨 [WorkflowConverter] Final edge summary:`, {
+    totalEdges: edges.length,
+    edges: edges.map(e => `${e.source} -> ${e.target}`),
+  });
+  console.log(`🎨 [WorkflowConverter] Final node summary:`, {
+    totalNodes: nodes.length,
+    nodeIds: nodes.map(n => n.id),
   });
 
   return { nodes, edges };

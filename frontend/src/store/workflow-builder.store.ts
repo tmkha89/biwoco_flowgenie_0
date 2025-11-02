@@ -220,7 +220,13 @@ export const useWorkflowBuilderStore = create<WorkflowBuilderStore>((set, get) =
   },
 
   // Edge management
-  setEdges: (edges) => set({ edges }),
+  setEdges: (edges) => {
+    console.log('🎨 [WorkflowBuilder] setEdges called with:', {
+      count: edges.length,
+      edges: edges.map(e => `${e.source} -> ${e.target} (id: ${e.id})`),
+    });
+    set({ edges });
+  },
 
   onEdgesChange: (changes) => {
     set({

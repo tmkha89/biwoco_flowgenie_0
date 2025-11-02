@@ -13,6 +13,12 @@ export class TriggerResponseDto {
 
   @Expose()
   config: Record<string, any>;
+
+  @Expose()
+  positionX?: number;
+
+  @Expose()
+  positionY?: number;
 }
 
 export class ActionResponseDto {
@@ -33,6 +39,18 @@ export class ActionResponseDto {
 
   @Expose()
   order: number;
+
+  @Expose()
+  positionX?: number;
+
+  @Expose()
+  positionY?: number;
+
+  @Expose()
+  nextActionId?: number;
+
+  @Expose()
+  parentActionId?: number;
 
   @Expose()
   retryConfig?: Record<string, any>;
@@ -104,6 +122,14 @@ export class ExecutionStepResponseDto {
   completedAt?: Date;
 }
 
+export class WorkflowInfoDto {
+  @Expose()
+  id: number;
+
+  @Expose()
+  name: string;
+}
+
 export class ExecutionResponseDto {
   @Expose()
   id: number;
@@ -141,5 +167,10 @@ export class ExecutionResponseDto {
 
   @Expose()
   updatedAt: Date;
+
+  // Workflow info (from included relation)
+  @Expose()
+  @Type(() => WorkflowInfoDto)
+  workflow?: WorkflowInfoDto;
 }
 

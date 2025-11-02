@@ -4,6 +4,7 @@ import { WorkflowService } from './workflow.service';
 import { ExecutionService } from './execution.service';
 import { WorkflowRepository } from './repositories/workflow.repository';
 import { ExecutionRepository } from './repositories/execution.repository';
+import { WorkflowRelationshipHelper } from './repositories/workflow.relationship.helper';
 import { TriggerRegistry } from './triggers/trigger.registry';
 import { ActionRegistry } from './actions/action.registry';
 import { ActionFactory } from './actions/action.factory';
@@ -32,6 +33,7 @@ import { ParallelActionHandler } from './actions/parallel.action';
     ExecutionService,
     WorkflowRepository,
     ExecutionRepository,
+    WorkflowRelationshipHelper,
     TriggerRegistry,
     ActionRegistry,
     ActionFactory,

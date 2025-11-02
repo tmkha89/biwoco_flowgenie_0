@@ -24,6 +24,22 @@ export class CreateActionDto {
   order: number;
 
   @IsOptional()
+  @IsNumber()
+  positionX?: number;
+
+  @IsOptional()
+  @IsNumber()
+  positionY?: number;
+
+  @IsOptional()
+  @IsNumber()
+  nextActionOrder?: number; // Order index of next action (for sequential flow)
+
+  @IsOptional()
+  @IsNumber()
+  parentActionOrder?: number; // Order index of parent action (for parallel/loop children)
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => RetryConfigDto)
   retryConfig?: RetryConfigDto;
@@ -35,6 +51,14 @@ export class CreateTriggerDto {
 
   @IsObject()
   config: Record<string, any>;
+
+  @IsOptional()
+  @IsNumber()
+  positionX?: number;
+
+  @IsOptional()
+  @IsNumber()
+  positionY?: number;
 }
 
 export class CreateWorkflowDto {

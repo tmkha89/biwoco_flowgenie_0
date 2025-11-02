@@ -179,7 +179,7 @@ const WorkflowListPage = () => {
 
                 <div className="flex gap-2">
                   <button
-                    onClick={() => navigate(`/workflows/${workflow.id}`)}
+                    onClick={() => navigate(`/workflows/${workflow.id}/edit`)}
                     className="flex-1 bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700"
                   >
                     Edit

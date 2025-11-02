@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE "triggers" ADD COLUMN "positionX" DOUBLE PRECISION,
+ADD COLUMN "positionY" DOUBLE PRECISION;
+
+-- AlterTable
+ALTER TABLE "actions" ADD COLUMN "positionX" DOUBLE PRECISION,
+ADD COLUMN "positionY" DOUBLE PRECISION;
+

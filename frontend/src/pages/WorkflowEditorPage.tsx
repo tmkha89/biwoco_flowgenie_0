@@ -105,8 +105,10 @@ const WorkflowEditorPage = () => {
           name: workflow.name,
           description: workflow.description,
           enabled: workflow.enabled,
+          trigger: workflow.trigger,
+          actions: workflow.actions,
         };
-        console.log('✏️ [WorkflowEditorPage] Updating workflow', updateData);
+        console.log('✏️ [WorkflowEditorPage] Updating workflow', { ...updateData, actionsCount: updateData.actions?.length });
         await updateWorkflow(parseInt(id), updateData);
         console.log('✅ [WorkflowEditorPage] Workflow updated successfully');
       } else {

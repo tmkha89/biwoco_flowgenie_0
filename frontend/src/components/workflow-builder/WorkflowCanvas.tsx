@@ -113,6 +113,16 @@ const WorkflowCanvasInner = () => {
   } = useWorkflowBuilderStore();
   const { screenToFlowPosition } = useReactFlow();
 
+  // Debug: Log what React Flow receives
+  React.useEffect(() => {
+    console.log('🎨 [WorkflowCanvas] React Flow received:', {
+      nodesCount: nodes.length,
+      edgesCount: edges.length,
+      nodes: nodes.map(n => ({ id: n.id, type: n.data?.type })),
+      edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target })),
+    });
+  }, [nodes, edges]);
+
   const onNodeClick = useCallback((_event: React.MouseEvent, node: ReactFlowNode) => {
     console.log('🎨 [WorkflowCanvas] Node clicked:', node.id);
     selectNode(node as WorkflowNode);

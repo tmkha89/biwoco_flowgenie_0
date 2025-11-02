@@ -79,9 +79,27 @@ const WorkflowBuilderPage = () => {
 
       // Convert backend format to React Flow format
       const { nodes: flowNodes, edges: flowEdges } = convertFromBackendFormat(workflow);
+      console.log('🎨 [WorkflowBuilderPage] Setting nodes and edges:', {
+        nodesCount: flowNodes.length,
+        edgesCount: flowEdges.length,
+        nodes: flowNodes.map(n => n.id),
+        edges: flowEdges.map(e => `${e.source} -> ${e.target}`),
+      });
       setNodes(flowNodes);
       setEdges(flowEdges);
-      loadWorkflow(workflow);
+      // Update workflow meta separately (don't call loadWorkflow as it has its own conversion)
+      const { setWorkflowMeta, setTrigger } = useWorkflowBuilderStore.getState();
+      setWorkflowMeta({
+        name: workflow.name,
+        description: workflow.description || '',
+        enabled: workflow.enabled,
+      });
+      if (workflow.trigger) {
+        setTrigger({
+          type: workflow.trigger.type as TriggerType,
+          config: workflow.trigger.config || {},
+        });
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load workflow');
       console.error('❌ [WorkflowBuilderPage] Error fetching workflow:', err);

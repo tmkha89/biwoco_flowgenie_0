@@ -47,6 +47,8 @@ const WorkflowToolbar = ({ workflowId, onExecute }: WorkflowToolbarProps) => {
           name: workflowData.name,
           description: workflowData.description,
           enabled: workflowData.enabled,
+          trigger: workflowData.trigger,
+          actions: workflowData.actions,
         });
         console.log('✅ [WorkflowToolbar] Workflow updated successfully');
       } else {

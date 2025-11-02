@@ -15,6 +15,7 @@ import { ExecutionService } from './execution.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
+import { UpdateWorkflowDto } from './dto/update-workflow.dto';
 import { TriggerWorkflowDto } from './dto/trigger-workflow.dto';
 import { WorkflowResponseDto, ExecutionResponseDto } from './dto/workflow-response.dto';
 import { plainToInstance } from 'class-transformer';
@@ -181,7 +182,7 @@ export class WorkflowController {
    * /workflows/{id}:
    *   put:
    *     summary: Update a workflow
-   *     description: Updates workflow name, description, or enabled status
+   *     description: Updates workflow name, description, enabled status, trigger, and/or actions
    *     tags:
    *       - Workflows
    *     security:
@@ -199,6 +200,20 @@ export class WorkflowController {
    *         application/json:
    *           schema:
    *             $ref: '#/components/schemas/UpdateWorkflow'
+   *           example:
+   *             name: "Updated Workflow Name"
+   *             description: "Updated description"
+   *             enabled: true
+   *             trigger:
+   *               type: "manual"
+   *               config: {}
+   *             actions:
+   *               - type: "http_request"
+   *                 name: "Updated Action"
+   *                 config:
+   *                   url: "https://api.example.com"
+   *                   method: "GET"
+   *                 order: 0
    *     responses:
    *       200:
    *         description: Workflow updated successfully
@@ -219,7 +234,7 @@ export class WorkflowController {
   async update(
     @CurrentUser('id') userId: number,
     @Param('id', ParseIntPipe) id: number,
-    @Body() updateDto: { name?: string; description?: string; enabled?: boolean },
+    @Body() updateDto: UpdateWorkflowDto,
   ): Promise<WorkflowResponseDto> {
     const workflow = await this.workflowService.update(id, userId, updateDto);
     return plainToInstance(WorkflowResponseDto, workflow, { excludeExtraneousValues: true });

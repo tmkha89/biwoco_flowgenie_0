@@ -14,12 +14,16 @@ export class WorkflowRepository {
     trigger: {
       type: string;
       config: Prisma.InputJsonValue;
+      positionX?: number;
+      positionY?: number;
     };
     actions: Array<{
       type: string;
       name: string;
       config: Prisma.InputJsonValue;
       order: number;
+      positionX?: number;
+      positionY?: number;
       retryConfig?: Prisma.InputJsonValue;
     }>;
   }) {
@@ -33,6 +37,8 @@ export class WorkflowRepository {
           create: {
             type: data.trigger.type,
             config: data.trigger.config,
+            positionX: data.trigger.positionX,
+            positionY: data.trigger.positionY,
           },
         },
         actions: {
@@ -41,6 +47,8 @@ export class WorkflowRepository {
             name: action.name,
             config: action.config,
             order: action.order,
+            positionX: action.positionX,
+            positionY: action.positionY,
             retryConfig: action.retryConfig,
           })),
         },
@@ -71,6 +79,11 @@ export class WorkflowRepository {
         actions: {
           orderBy: {
             order: 'asc',
+          },
+          include: {
+            nextAction: true,
+            parentAction: true,
+            childActions: true,
           },
         },
         user: {

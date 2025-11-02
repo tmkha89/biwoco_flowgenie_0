@@ -22,7 +22,7 @@ function App() {
             <Route path="/workflows" element={<ProtectedRoute><WorkflowListPage /></ProtectedRoute>} />
             <Route path="/workflows/new" element={<ProtectedRoute><WorkflowBuilderPage /></ProtectedRoute>} />
             <Route path="/workflows/:id/edit" element={<ProtectedRoute><WorkflowBuilderPage /></ProtectedRoute>} />
-            <Route path="/workflows/:id" element={<ProtectedRoute><WorkflowEditorPage /></ProtectedRoute>} />
+            <Route path="/workflows/:id" element={<ProtectedRoute><WorkflowBuilderPage /></ProtectedRoute>} />
             <Route path="/workflows/:id/execute" element={<ProtectedRoute><WorkflowRunPage /></ProtectedRoute>} />
             <Route path="/oauth-redirect" element={<OAuthRedirectHandler />} />
           </Routes>

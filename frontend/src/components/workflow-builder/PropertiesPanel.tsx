@@ -6,7 +6,7 @@ import { ActionType } from '../../types/workflow-builder';
 import { TriggerType } from '../../types/workflows';
 
 const PropertiesPanel = () => {
-  const { selectedNode, updateNode, setTrigger, trigger, workflowMeta, setWorkflowMeta } = useWorkflowBuilderStore();
+  const { selectedNode, updateNode, deleteNode, setTrigger, trigger, workflowMeta, setWorkflowMeta } = useWorkflowBuilderStore();
 
   if (!selectedNode) {
     return (
@@ -28,6 +28,22 @@ const PropertiesPanel = () => {
 
   const handleNameChange = (name: string) => {
     updateNode(selectedNode.id, { name });
+  };
+
+  const handleDelete = () => {
+    if (!selectedNode) return;
+    
+    // Don't allow deleting trigger node
+    if (selectedNode.data.type === 'trigger') {
+      alert('Cannot delete trigger node - it is required');
+      return;
+    }
+
+    if (window.confirm(`Are you sure you want to delete "${selectedNode.data.name}"?`)) {
+      deleteNode(selectedNode.id);
+      // Deselect node after deletion
+      useWorkflowBuilderStore.getState().selectNode(null);
+    }
   };
 
   // Trigger node properties
@@ -73,7 +89,16 @@ const PropertiesPanel = () => {
   // Action node properties
   return (
     <div className="w-80 bg-gray-50 border-l border-gray-200 h-full overflow-y-auto p-4">
-      <h3 className="text-lg font-bold text-gray-800 mb-4">Action Properties</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold text-gray-800">Action Properties</h3>
+        <button
+          onClick={handleDelete}
+          className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors"
+          title="Delete action"
+        >
+          Delete
+        </button>
+      </div>
 
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>

@@ -36,12 +36,18 @@ export interface CreateAction {
   name: string;
   config: Record<string, any>;
   order: number;
+  positionX?: number;
+  positionY?: number;
+  nextActionOrder?: number; // Order index of next action (for sequential flow)
+  parentActionOrder?: number; // Order index of parent action (for parallel/loop children)
   retryConfig?: RetryConfig;
 }
 
 export interface CreateTrigger {
   type: TriggerType;
   config: Record<string, any>;
+  positionX?: number;
+  positionY?: number;
 }
 
 export interface CreateWorkflow {
@@ -57,6 +63,8 @@ export interface TriggerResponse {
   workflowId: number;
   type: string;
   config: Record<string, any>;
+  positionX?: number;
+  positionY?: number;
 }
 
 export interface ActionResponse {
@@ -66,6 +74,10 @@ export interface ActionResponse {
   name: string;
   config: Record<string, any>;
   order: number;
+  positionX?: number;
+  positionY?: number;
+  nextActionId?: number;
+  parentActionId?: number;
   retryConfig?: Record<string, any>;
 }
 
@@ -108,6 +120,10 @@ export interface ExecutionResponse {
   executionSteps: ExecutionStepResponse[];
   createdAt: string;
   updatedAt: string;
+  workflow?: {
+    id: number;
+    name: string;
+  };
 }
 
 export interface TriggerWorkflowRequest {
@@ -118,5 +134,7 @@ export interface UpdateWorkflowRequest {
   name?: string;
   description?: string;
   enabled?: boolean;
+  trigger?: CreateTrigger;
+  actions?: CreateAction[];
 }
 

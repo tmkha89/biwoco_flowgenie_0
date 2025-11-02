@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 /**
@@ -9,6 +9,8 @@ import { PrismaService } from '../../database/prisma.service';
  */
 @Injectable()
 export class WorkflowRelationshipHelper {
+  private readonly logger = new Logger(WorkflowRelationshipHelper.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -21,15 +23,18 @@ export class WorkflowRelationshipHelper {
     workflowId: number,
     actionRelationships: Map<number, { nextActionId?: number; parentActionId?: number }>,
   ): Promise<void> {
+    this.logger.log(`Updating ${actionRelationships.size} action relationships for workflow ${workflowId}`);
     const updates = [];
 
     for (const [actionId, relationships] of actionRelationships.entries()) {
       const updateData: any = {};
       if (relationships.nextActionId !== undefined) {
         updateData.nextActionId = relationships.nextActionId;
+        this.logger.debug(`Action ${actionId}: nextActionId=${relationships.nextActionId}`);
       }
       if (relationships.parentActionId !== undefined) {
         updateData.parentActionId = relationships.parentActionId;
+        this.logger.debug(`Action ${actionId}: parentActionId=${relationships.parentActionId}`);
       }
 
       if (Object.keys(updateData).length > 0) {
@@ -39,10 +44,13 @@ export class WorkflowRelationshipHelper {
             data: updateData,
           }),
         );
+        this.logger.debug(`Queued update for action ${actionId}: ${JSON.stringify(updateData)}`);
       }
     }
 
+    this.logger.debug(`Executing ${updates.length} relationship updates in parallel`);
     await Promise.all(updates);
+    this.logger.log(`Successfully updated ${updates.length} action relationships for workflow ${workflowId}`);
   }
 
   /**

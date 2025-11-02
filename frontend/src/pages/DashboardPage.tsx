@@ -2,14 +2,16 @@ import Navbar from '../components/Navbar';
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getWorkflows } from '../api/workflows';
-import type { WorkflowResponse } from '../types/workflows';
+import { getWorkflows, getExecutionHistory } from '../api/workflows';
+import type { WorkflowResponse, ExecutionResponse, WorkflowStatus } from '../types/workflows';
 
 const DashboardPage = () => {
   const { user, isAuthenticated, isInitializing } = useAuth();
   const navigate = useNavigate();
   const [workflows, setWorkflows] = useState<WorkflowResponse[]>([]);
   const [isLoadingWorkflows, setIsLoadingWorkflows] = useState(false);
+  const [executions, setExecutions] = useState<ExecutionResponse[]>([]);
+  const [isLoadingExecutions, setIsLoadingExecutions] = useState(false);
 
   useEffect(() => {
     console.log('📊 [DashboardPage] Component mounted', { isInitializing, isAuthenticated });
@@ -21,9 +23,10 @@ const DashboardPage = () => {
         // Redirect to the login page and replace history entry
         navigate('/login', { replace: true });
       } else {
-        // Load workflows when authenticated
-        console.log('📊 [DashboardPage] Authenticated, loading workflows');
+        // Load workflows and executions when authenticated
+        console.log('📊 [DashboardPage] Authenticated, loading workflows and executions');
         loadWorkflows();
+        loadExecutions();
       }
     }
   }, [isAuthenticated, isInitializing, navigate]);
@@ -40,6 +43,43 @@ const DashboardPage = () => {
     } finally {
       setIsLoadingWorkflows(false);
     }
+  };
+
+  const loadExecutions = async () => {
+    console.log('📊 [DashboardPage] loadExecutions() called');
+    try {
+      setIsLoadingExecutions(true);
+      const data = await getExecutionHistory(10); // Show last 10 executions
+      console.log('📊 [DashboardPage] Executions loaded', { count: data.length });
+      setExecutions(data);
+    } catch (err) {
+      console.error('❌ [DashboardPage] Failed to load executions:', err);
+    } finally {
+      setIsLoadingExecutions(false);
+    }
+  };
+
+  const getStatusBadgeClass = (status: WorkflowStatus) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-100 text-green-800';
+      case 'failed':
+        return 'bg-red-100 text-red-800';
+      case 'running':
+        return 'bg-blue-100 text-blue-800';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'cancelled':
+        return 'bg-gray-100 text-gray-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleString();
   };
 
   return (
@@ -139,6 +179,95 @@ const DashboardPage = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Execution History */}
+        <div className="mt-8">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-semibold">Execution History</h3>
+            {executions.length > 0 && (
+              <Link to="/workflows" className="text-blue-600 hover:text-blue-800 text-sm">
+                View all →
+              </Link>
+            )}
+          </div>
+
+          {isLoadingExecutions && (
+            <div className="text-center py-8">
+              <div className="text-gray-600">Loading execution history...</div>
+            </div>
+          )}
+
+          {!isLoadingExecutions && executions.length === 0 && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+              <p className="text-gray-600">No executions yet.</p>
+              <p className="text-gray-500 text-sm mt-2">Execute a workflow to see execution history here.</p>
+            </div>
+          )}
+
+          {!isLoadingExecutions && executions.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Workflow
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Started At
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Completed At
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Steps
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {executions.map((execution) => (
+                    <tr key={execution.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {execution.workflow?.name || `Workflow #${execution.workflowId}`}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeClass(
+                            execution.status
+                          )}`}
+                        >
+                          {execution.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDate(execution.startedAt)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDate(execution.completedAt)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {execution.executionSteps?.length || 0} steps
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <Link
+                          to={`/workflows/${execution.workflowId}`}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          View Workflow
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
