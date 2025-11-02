@@ -33,12 +33,8 @@ export const getCurrentUser = async (accessToken: string) => {
   return res.data;
 };
 
-// // Google OAuth2
-// export const googleLogin = async (token: string) => {
-//   const res = await axios.post(`${API_URL}/auth/google`, { token })
-//   return res.data
-// }
-
-export const googleLogin = () => {
-  window.location.href = `${API_URL}/auth/google`;
+// Google OAuth2 - Exchange Google ID token for application tokens
+export const googleLogin = async (token: string) => {
+  const res = await axios.post(`${API_URL}/auth/google/exchange`, { token });
+  return res.data;
 };

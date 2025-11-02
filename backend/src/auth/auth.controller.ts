@@ -8,6 +8,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
@@ -322,6 +323,83 @@ export class AuthController {
   ): Promise<AuthResponseDto> {
     console.log(body);
     return this.authService.signup(body);
+  }
+
+  /**
+   * @openapi
+   * /auth/google/exchange:
+   *   post:
+   *     summary: Exchange Google ID token for application tokens
+   *     description: Exchange a Google ID token (from @react-oauth/google) for application tokens.
+   *     tags:
+   *       - Authentication
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - token
+   *             properties:
+   *               token:
+   *                 type: string
+   *                 description: Google ID token from @react-oauth/google
+   *                 example: eyJhbGciOiJSUzI1NiIs...
+   *     responses:
+   *       200:
+   *         description: Authentication successful
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AuthResponse'
+   *       401:
+   *         description: Invalid ID token
+   *       500:
+   *         description: Server error
+   */
+  @Post('google/exchange')
+  @HttpCode(HttpStatus.OK)
+  async googleExchange(
+    @Body() body: { token: string },
+  ): Promise<AuthResponseDto> {
+    // Decode the Google ID token and extract user info
+    const googleOAuthService = (this.authService as any).googleOAuthService;
+    const usersService = (this.authService as any).usersService;
+    const jwtService = (this.authService as any).jwtService;
+    const refreshTokenService = (this.authService as any).refreshTokenService;
+
+    const userInfo = await googleOAuthService.decodeIdToken(body.token);
+    if (!userInfo || !userInfo.email || !userInfo.verified_email) {
+      throw new UnauthorizedException('Invalid Google ID token');
+    }
+
+    // Create or update user
+    const user = await usersService.createOrUpdate({
+      email: userInfo.email,
+      name: userInfo.name,
+      avatar: userInfo.picture,
+    });
+
+    // Generate tokens
+    const accessToken = await jwtService.generateAccessToken({
+      sub: user.id,
+      email: user.email,
+    });
+
+    const refreshToken = await refreshTokenService.generateRefreshToken(user.id);
+
+    return {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_in: jwtService.getAccessTokenExpiration(),
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name || undefined,
+        avatar: user.avatar || undefined,
+      },
+    };
   }
 
   /**

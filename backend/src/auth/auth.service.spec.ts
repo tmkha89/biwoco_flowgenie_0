@@ -1,11 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtService } from './services/jwt.service';
 import { RefreshTokenService } from './services/refresh-token.service';
 import { GoogleOAuthService } from './services/google-oauth.service';
 import { UsersService } from '../users/users.service';
 import { OAuthService } from '../oauth/oauth.service';
+import * as bcrypt from 'bcrypt';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -39,6 +40,8 @@ describe('AuthService', () => {
     const mockUsersService = {
       createOrUpdate: jest.fn(),
       findById: jest.fn(),
+      findByEmail: jest.fn(),
+      createUser: jest.fn(),
     };
 
     const mockOAuthService = {
@@ -265,6 +268,169 @@ describe('AuthService', () => {
       const result = await service.getUserById(999);
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('login', () => {
+    const mockUser = {
+      id: 1,
+      email: 'test@example.com',
+      name: 'Test User',
+      avatar: 'https://example.com/avatar.jpg',
+      password: '$2b$10$hashedpassword',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    beforeEach(() => {
+      jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(true));
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should successfully login with valid credentials', async () => {
+      usersService.findByEmail.mockResolvedValue(mockUser);
+      jwtService.generateAccessToken.mockResolvedValue('jwt-token');
+      jwtService.getAccessTokenExpiration.mockReturnValue(3600);
+      refreshTokenService.generateRefreshToken.mockResolvedValue('refresh-token');
+
+      const result = await service.login({
+        email: 'test@example.com',
+        password: 'password123',
+      });
+
+      expect(result).toMatchObject({
+        access_token: 'jwt-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600,
+        user: {
+          id: 1,
+          email: 'test@example.com',
+          name: 'Test User',
+          avatar: 'https://example.com/avatar.jpg',
+        },
+      });
+
+      expect(usersService.findByEmail).toHaveBeenCalledWith('test@example.com');
+      expect(bcrypt.compare).toHaveBeenCalledWith('password123', mockUser.password);
+      expect(jwtService.generateAccessToken).toHaveBeenCalledWith({
+        sub: 1,
+        email: 'test@example.com',
+      });
+      expect(refreshTokenService.generateRefreshToken).toHaveBeenCalledWith(1);
+    });
+
+    it('should throw UnauthorizedException when user not found', async () => {
+      usersService.findByEmail.mockResolvedValue(null);
+
+      await expect(
+        service.login({
+          email: 'nonexistent@example.com',
+          password: 'password123',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(usersService.findByEmail).toHaveBeenCalledWith('nonexistent@example.com');
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
+
+    it('should throw UnauthorizedException for invalid password', async () => {
+      usersService.findByEmail.mockResolvedValue(mockUser);
+      jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(false));
+
+      await expect(
+        service.login({
+          email: 'test@example.com',
+          password: 'wrongpassword',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(bcrypt.compare).toHaveBeenCalledWith('wrongpassword', mockUser.password);
+      expect(jwtService.generateAccessToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('signup', () => {
+    const mockNewUser = {
+      id: 1,
+      email: 'newuser@example.com',
+      name: 'New User',
+      avatar: null,
+      password: '$2b$10$hashedpassword',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    beforeEach(() => {
+      jest.spyOn(bcrypt, 'hash').mockImplementation(() => Promise.resolve('$2b$10$hashedpassword'));
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should successfully signup new user', async () => {
+      usersService.findByEmail.mockResolvedValue(null);
+      usersService.createUser.mockResolvedValue(mockNewUser);
+      jwtService.generateAccessToken.mockResolvedValue('jwt-token');
+      jwtService.getAccessTokenExpiration.mockReturnValue(3600);
+      refreshTokenService.generateRefreshToken.mockResolvedValue('refresh-token');
+
+      const result = await service.signup({
+        name: 'New User',
+        email: 'newuser@example.com',
+        password: 'password123',
+      });
+
+      expect(result).toMatchObject({
+        access_token: 'jwt-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600,
+        user: {
+          id: 1,
+          email: 'newuser@example.com',
+          name: 'New User',
+        },
+      });
+
+      expect(usersService.findByEmail).toHaveBeenCalledWith('newuser@example.com');
+      expect(bcrypt.hash).toHaveBeenCalledWith('password123', 10);
+      expect(usersService.createUser).toHaveBeenCalledWith({
+        name: 'New User',
+        email: 'newuser@example.com',
+        password: '$2b$10$hashedpassword',
+      });
+      expect(jwtService.generateAccessToken).toHaveBeenCalledWith({
+        sub: 1,
+        email: 'newuser@example.com',
+      });
+    });
+
+    it('should throw BadRequestException for duplicate email', async () => {
+      const existingUser = {
+        id: 1,
+        email: 'existing@example.com',
+        name: 'Existing User',
+        avatar: null,
+        password: '$2b$10$hashedpassword',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      usersService.findByEmail.mockResolvedValue(existingUser);
+
+      await expect(
+        service.signup({
+          name: 'New User',
+          email: 'existing@example.com',
+          password: 'password123',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(usersService.findByEmail).toHaveBeenCalledWith('existing@example.com');
+      expect(usersService.createUser).not.toHaveBeenCalled();
     });
   });
 });
