@@ -93,17 +93,26 @@ model Trigger {
 model Action {
   id          Int      @id @default(autoincrement())
   workflowId  Int
-  type        String   // 'slack_message', 'gmail_send', 'notion_create', etc.
+  type        String   // 'http_request', 'email', 'wait', 'conditional', 'loop', 'parallel', etc.
   name        String
   config      Json     // Action-specific configuration
-  order       Int      // Order of execution (0-based)
+  order       Int      // Order of execution (0-based, for sequential)
+  nextActionId Int?    // ID of next action to execute (for sequential flow)
+  parentActionId Int?  // ID of parent action (for nested parallel/conditional)
   retryConfig Json?    // Retry configuration (attempts, backoff)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   workflow        Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
   executionSteps  ExecutionStep[]
+  parentAction    Action?         @relation("ActionParent", fields: [parentActionId], references: [id], onDelete: Cascade)
+  childActions    Action[]        @relation("ActionParent")
+  nextAction      Action?         @relation("ActionSequence", fields: [nextActionId], references: [id], onDelete: SetNull)
+  previousActions Action[]        @relation("ActionSequence")
 
+  @@index([workflowId, order])
+  @@index([parentActionId])
+  @@index([nextActionId])
   @@map("actions")
 }
 

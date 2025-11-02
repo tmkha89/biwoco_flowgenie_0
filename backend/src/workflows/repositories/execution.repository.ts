@@ -53,6 +53,11 @@ export class ExecutionRepository {
               orderBy: {
                 order: 'asc',
               },
+              include: {
+                nextAction: true,
+                parentAction: true,
+                childActions: true,
+              },
             },
           },
         },

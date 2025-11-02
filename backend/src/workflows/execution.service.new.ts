@@ -22,9 +22,7 @@ export class ExecutionService {
     private readonly executionRepository: ExecutionRepository,
     private readonly actionRegistry: ActionRegistry,
     private readonly actionFactory: ActionFactory,
-  ) {
-    // ActionFactory depends on ActionRegistry, which is already injected
-  }
+  ) {}
 
   async findById(id: number, userId: number) {
     const execution = await this.executionRepository.findById(id);

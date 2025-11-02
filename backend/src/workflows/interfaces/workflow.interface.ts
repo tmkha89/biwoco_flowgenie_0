@@ -104,6 +104,29 @@ export interface ExecutionContext {
   triggerData: Record<string, any>;
   stepResults: Record<number, any>; // actionId -> result
   currentStepOrder: number;
+  loopContext?: LoopContext; // Context for loop iterations
+}
+
+/**
+ * Loop execution context
+ */
+export interface LoopContext {
+  item: any;
+  index: number;
+  itemVariable: string;
+  parentActionId: number;
+}
+
+/**
+ * Action execution result with metadata
+ */
+export interface ActionResult {
+  actionId: number;
+  result: any;
+  nextActionId?: number; // For conditional/sequential actions
+  parallelActionIds?: number[]; // For parallel actions
+  loopItems?: any[]; // For loop actions
+  shouldContinue: boolean;
 }
 
 /**

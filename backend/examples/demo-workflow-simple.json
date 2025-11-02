@@ -1,0 +1,40 @@
+{
+  "name": "Simple Sequential Workflow",
+  "description": "A simple workflow with sequential HTTP and Email actions",
+  "enabled": true,
+  "trigger": {
+    "type": "manual",
+    "config": {}
+  },
+  "actions": [
+    {
+      "id": 1,
+      "type": "http_request",
+      "name": "Fetch Weather Data",
+      "order": 0,
+      "config": {
+        "method": "GET",
+        "url": "https://api.openweathermap.org/data/2.5/weather?q=London&appid=YOUR_API_KEY",
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      },
+      "nextActionId": 2
+    },
+    {
+      "id": 2,
+      "type": "email",
+      "name": "Send Weather Report",
+      "order": 1,
+      "config": {
+        "provider": "smtp",
+        "to": "user@example.com",
+        "from": "weather@flowgenie.com",
+        "subject": "Weather Report for London",
+        "body": "Temperature: {{step.1.output.data.main.temp}}°C, Condition: {{step.1.output.data.weather[0].description}}"
+      },
+      "nextActionId": null
+    }
+  ]
+}
+

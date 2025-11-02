@@ -6,6 +6,7 @@ import { WorkflowRepository } from './repositories/workflow.repository';
 import { ExecutionRepository } from './repositories/execution.repository';
 import { TriggerRegistry } from './triggers/trigger.registry';
 import { ActionRegistry } from './actions/action.registry';
+import { ActionFactory } from './actions/action.factory';
 import { DatabaseModule } from '../database/database.module';
 import { Queue } from 'bullmq';
 import { getRedisConnectionObject } from '../queues/queue.config';
@@ -16,6 +17,12 @@ import { WebhookTriggerHandler } from './triggers/webhook.trigger';
 
 // Action handlers
 import { ExampleActionHandler } from './actions/example.action';
+import { HttpActionHandler } from './actions/http.action';
+import { EmailActionHandler } from './actions/email.action';
+import { WaitActionHandler } from './actions/wait.action';
+import { ConditionalActionHandler } from './actions/conditional.action';
+import { LoopActionHandler } from './actions/loop.action';
+import { ParallelActionHandler } from './actions/parallel.action';
 
 @Module({
   imports: [DatabaseModule],
@@ -27,11 +34,18 @@ import { ExampleActionHandler } from './actions/example.action';
     ExecutionRepository,
     TriggerRegistry,
     ActionRegistry,
+    ActionFactory,
     // Trigger handlers
     ManualTriggerHandler,
     WebhookTriggerHandler,
     // Action handlers
     ExampleActionHandler,
+    HttpActionHandler,
+    EmailActionHandler,
+    WaitActionHandler,
+    ConditionalActionHandler,
+    LoopActionHandler,
+    ParallelActionHandler,
     // Workflow queue
     {
       provide: 'WORKFLOW_QUEUE',
@@ -75,11 +89,32 @@ import { ExampleActionHandler } from './actions/example.action';
       useFactory: (
         actionRegistry: ActionRegistry,
         exampleAction: ExampleActionHandler,
+        httpAction: HttpActionHandler,
+        emailAction: EmailActionHandler,
+        waitAction: WaitActionHandler,
+        conditionalAction: ConditionalActionHandler,
+        loopAction: LoopActionHandler,
+        parallelAction: ParallelActionHandler,
       ) => {
         actionRegistry.registerHandler(exampleAction);
+        actionRegistry.registerHandler(httpAction);
+        actionRegistry.registerHandler(emailAction);
+        actionRegistry.registerHandler(waitAction);
+        actionRegistry.registerHandler(conditionalAction);
+        actionRegistry.registerHandler(loopAction);
+        actionRegistry.registerHandler(parallelAction);
         return true;
       },
-      inject: [ActionRegistry, ExampleActionHandler],
+      inject: [
+        ActionRegistry,
+        ExampleActionHandler,
+        HttpActionHandler,
+        EmailActionHandler,
+        WaitActionHandler,
+        ConditionalActionHandler,
+        LoopActionHandler,
+        ParallelActionHandler,
+      ],
     },
   ],
   exports: [WorkflowService, ExecutionService, ActionRegistry, TriggerRegistry],
