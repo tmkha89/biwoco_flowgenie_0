@@ -193,10 +193,10 @@ export function convertFromBackendFormat(workflow: any): {
   const nodes: WorkflowNode[] = [];
   const edges: WorkflowEdge[] = [];
 
-  // Add trigger node - always required, use saved position or default
+  // Add trigger node - always required, use saved position or default to top left
   const triggerPosition = workflow.trigger?.positionX !== undefined && workflow.trigger?.positionY !== undefined
     ? { x: workflow.trigger.positionX, y: workflow.trigger.positionY }
-    : { x: 325, y: 30 }; // Default position
+    : { x: 50, y: 50 }; // Default position: top left
 
   if (workflow.trigger) {
     nodes.push({

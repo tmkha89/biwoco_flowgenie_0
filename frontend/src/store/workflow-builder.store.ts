@@ -293,12 +293,15 @@ export const useWorkflowBuilderStore = create<WorkflowBuilderStore>((set, get) =
     const nodes: WorkflowNode[] = [];
     const edges: WorkflowEdge[] = [];
 
-    // Add trigger node - always required, positioned at top center (30px from top)
+    // Add trigger node - always required, positioned at top left (or use saved position)
     if (workflow.trigger) {
       nodes.push({
         id: 'trigger',
         type: 'default',
-        position: { x: 325, y: 5 },
+        position: { 
+          x: workflow.trigger.positionX ?? 10, 
+          y: workflow.trigger.positionY ?? 10 
+        },
         data: {
           id: 'trigger',
           type: 'trigger' as any,
@@ -322,7 +325,7 @@ export const useWorkflowBuilderStore = create<WorkflowBuilderStore>((set, get) =
       nodes.push({
         id: 'trigger',
         type: 'default',
-        position: { x: 325, y: 5 },
+        position: { x: 10, y: 10 },
         data: {
           id: 'trigger',
           type: 'trigger' as any,
@@ -404,11 +407,11 @@ export const useWorkflowBuilderStore = create<WorkflowBuilderStore>((set, get) =
 
   reset: () => {
     console.log('🎨 [WorkflowBuilder] Resetting workflow builder');
-    // Always include trigger node on reset
+    // Always include trigger node on reset, positioned at top left
     const triggerNode: WorkflowNode = {
       id: 'trigger',
       type: 'default',
-      position: { x: 325, y: 5 },
+      position: { x: 10, y: 10 },
       data: {
         id: 'trigger',
         type: 'trigger' as any,

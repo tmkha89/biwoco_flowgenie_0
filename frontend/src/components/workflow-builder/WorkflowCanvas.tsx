@@ -216,7 +216,6 @@ const WorkflowCanvasInner = () => {
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       nodeTypes={nodeTypes}
-      fitView
       minZoom={0.1}
       maxZoom={1}
       defaultViewport={{ x: 0, y: 0, zoom: 1 }}

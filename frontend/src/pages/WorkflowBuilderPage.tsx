@@ -63,15 +63,14 @@ const WorkflowBuilderPage = () => {
     } else {
       console.log('🎨 [WorkflowBuilderPage] Creating new workflow');
       reset();
-      // Add default trigger node at top center (30px from top)
-      // Center horizontally: approximately center of a standard canvas (assuming ~800px width, node is 150px wide)
-      // Center calculation: (canvas width / 2) - (node width / 2) ≈ 400 - 75 = 325
+      // Add default trigger node at top left
+      // Note: reset() already creates trigger at (10, 10), so this is redundant but kept for consistency
       const { setNodes } = useWorkflowBuilderStore.getState();
       setNodes([
         {
           id: 'trigger',
           type: 'default',
-          position: { x: 325, y: 30 },
+          position: { x: 10, y: 10 },
           data: {
             id: 'trigger',
             type: 'trigger' as any,
