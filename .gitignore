@@ -15,6 +15,8 @@
 
 # testing
 */coverage
+*/sonarqube
+*/.scannerwork
 
 # next.js
 */.next/
@@ -50,3 +52,5 @@
 *.7z
 *.zip
 *.rar
+*.sonarqube
+*.txt
