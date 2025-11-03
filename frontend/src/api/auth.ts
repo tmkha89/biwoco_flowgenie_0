@@ -2,16 +2,16 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '';
 
-export const login = async (email: string, password: string) => {
-  console.log('📡 [API] POST /auth/login - Request sent', { email: email.replace(/\S(?=\S{3})/g, '*') });
-  const res = await axios.post(`${API_URL}/auth/login`, { email, password });
+export const login = async (username: string, password: string) => {
+  console.log('📡 [API] POST /auth/login - Request sent', { username: username.replace(/\S(?=\S{3})/g, '*') });
+  const res = await axios.post(`${API_URL}/auth/login`, { username, password });
   console.log('✅ [API] POST /auth/login - Response received', { hasTokens: !!res.data.access_token });
   return res.data;
 };
 
-export const signup = async (name: string, email: string, password: string) => {
-  console.log('📡 [API] POST /auth/signup - Request sent', { name, email: email.replace(/\S(?=\S{3})/g, '*') });
-  const res = await axios.post(`${API_URL}/auth/signup`, { name, email, password });
+export const signup = async (name: string, username: string, email: string | undefined, password: string) => {
+  console.log('📡 [API] POST /auth/signup - Request sent', { name, username: username.replace(/\S(?=\S{3})/g, '*') });
+  const res = await axios.post(`${API_URL}/auth/signup`, { name, username, email, password });
   console.log('✅ [API] POST /auth/signup - Response received', { hasTokens: !!res.data.access_token });
   return res.data;
 };
@@ -46,5 +46,51 @@ export const googleLogin = async (token: string) => {
   console.log('📡 [API] POST /auth/google/exchange - Request sent');
   const res = await axios.post(`${API_URL}/auth/google/exchange`, { token });
   console.log('✅ [API] POST /auth/google/exchange - Response received', { hasTokens: !!res.data.access_token });
+  return res.data;
+};
+
+// Google OAuth2 - Connect Google account (requires authentication)
+export const connectGoogle = async (accessToken: string) => {
+  console.log('📡 [API] GET /auth/google/connect - Request sent');
+  // Note: We need to make a request that includes the Authorization header
+  // Since this is a redirect endpoint, we'll use fetch with credentials
+  // But for simplicity, we can just redirect and let the backend handle auth via cookie/session
+  // For now, we'll use fetch to get the redirect URL, then navigate to it
+  try {
+    const response = await fetch(`${API_URL}/auth/google/connect`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      redirect: 'manual', // Don't follow redirect automatically
+    });
+    
+    // If we get a redirect response, navigate to the Location header
+    if (response.status === 302 || response.status === 307 || response.status === 308) {
+      const location = response.headers.get('Location');
+      if (location) {
+        window.location.href = location;
+        return;
+      }
+    }
+    
+    // Fallback: just redirect directly
+    window.location.href = `${API_URL}/auth/google/connect`;
+  } catch (err) {
+    console.error('Error connecting Google:', err);
+    // Fallback: just redirect directly
+    window.location.href = `${API_URL}/auth/google/connect`;
+  }
+};
+
+// Google OAuth2 - Disconnect Google account
+export const disconnectGoogle = async (accessToken: string) => {
+  console.log('📡 [API] POST /auth/google/disconnect - Request sent');
+  const res = await axios.post(
+    `${API_URL}/auth/google/disconnect`,
+    {},
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  console.log('✅ [API] POST /auth/google/disconnect - Response received');
   return res.data;
 };

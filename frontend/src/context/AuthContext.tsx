@@ -19,7 +19,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   setTokens: (access: string, refresh: string) => void;
   logout: () => void;
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   loginWithGoogle: (token: string) => Promise<void>;
   isInitializing: boolean;
 }
@@ -68,10 +68,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (username: string, password: string) => {
     console.log('🔑 [AuthContext] login() called');
     // 1. Call API
-    const data = await apiLogin(email, password);
+    const data = await apiLogin(username, password);
     const { access_token, refresh_token } = data;
     console.log('🔑 [AuthContext] Tokens received, setting tokens...');
     

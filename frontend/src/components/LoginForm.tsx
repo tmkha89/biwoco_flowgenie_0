@@ -7,20 +7,20 @@ import { jwtDecode } from 'jwt-decode'
 const LoginForm = () => {
   const navigate = useNavigate()
   const { login, loginWithGoogle } = useAuth()
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('🔐 [LoginForm] Form submitted', { email: email.replace(/\S(?=\S{3})/g, '*') }) // Mask email
+    console.log('🔐 [LoginForm] Form submitted', { username: username.replace(/\S(?=\S{3})/g, '*') }) // Mask username
     setError(null)
     setLoading(true)
 
     try {
       console.log('🔐 [LoginForm] Calling login function...')
-      await login(email, password) 
+      await login(username, password) 
       console.log('✅ [LoginForm] Login successful, redirecting to dashboard')
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
@@ -59,9 +59,9 @@ const LoginForm = () => {
       <form onSubmit={handleSubmit}>
         <input
           className="border p-2 w-full rounded mb-3"
-          placeholder="Email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
+          placeholder="Username"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
         />
         <input
           className="border p-2 w-full rounded mb-3"

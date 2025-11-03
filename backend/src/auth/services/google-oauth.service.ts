@@ -66,11 +66,20 @@ export class GoogleOAuthService {
       );
     }
 
+    // Required OAuth2 scopes for Gmail and Calendar
+    const scopes = [
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/gmail.modify',
+      'https://www.googleapis.com/auth/calendar',
+    ].join(' ');
+
     const params = new URLSearchParams({
       client_id: this.clientId,
       redirect_uri: this.redirectUri,
       response_type: 'code',
-      scope: 'openid email profile',
+      scope: scopes,
       access_type: 'offline',
       prompt: 'consent',
     });
@@ -148,5 +157,36 @@ export class GoogleOAuthService {
     } catch (error) {
       return null;
     }
+  }
+
+  async refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_in: number; refresh_token?: string }> {
+    if (!this.isEnabled) {
+      throw new Error(
+        'Google OAuth is not configured. Please set required environment variables.',
+      );
+    }
+
+    const params = new URLSearchParams({
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    });
+
+    const response = await axios.post<GoogleTokenResponse>(
+      'https://oauth2.googleapis.com/token',
+      params.toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      },
+    );
+
+    return {
+      access_token: response.data.access_token,
+      expires_in: response.data.expires_in,
+      refresh_token: response.data.refresh_token, // May or may not be present
+    };
   }
 }

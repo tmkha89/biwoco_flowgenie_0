@@ -1,17 +1,23 @@
 import Navbar from '../components/Navbar';
 import { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getWorkflows, getExecutionHistory } from '../api/workflows';
+import { connectGoogle, disconnectGoogle } from '../api/auth';
 import type { WorkflowResponse, ExecutionResponse, WorkflowStatus } from '../types/workflows';
 
 const DashboardPage = () => {
-  const { user, isAuthenticated, isInitializing } = useAuth();
+  const { user, isAuthenticated, isInitializing, accessToken } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [workflows, setWorkflows] = useState<WorkflowResponse[]>([]);
   const [isLoadingWorkflows, setIsLoadingWorkflows] = useState(false);
   const [executions, setExecutions] = useState<ExecutionResponse[]>([]);
   const [isLoadingExecutions, setIsLoadingExecutions] = useState(false);
+  const [googleConnecting, setGoogleConnecting] = useState(false);
+  const [googleDisconnecting, setGoogleDisconnecting] = useState(false);
+  const [googleMessage, setGoogleMessage] = useState<string | null>(null);
+  const [googleError, setGoogleError] = useState<string | null>(null);
 
   useEffect(() => {
     console.log('📊 [DashboardPage] Component mounted', { isInitializing, isAuthenticated });
@@ -30,6 +36,31 @@ const DashboardPage = () => {
       }
     }
   }, [isAuthenticated, isInitializing, navigate]);
+
+  // Handle OAuth callback messages
+  useEffect(() => {
+    const googleConnected = searchParams.get('googleConnected');
+    const googleErrorParam = searchParams.get('googleError');
+
+    if (googleConnected === 'true') {
+      setGoogleMessage('Google account connected successfully!');
+      setGoogleError(null);
+      // Clear the URL parameter
+      setSearchParams({});
+      // Refresh user data to get updated googleLinked status
+      if (accessToken) {
+        // You might want to refresh user data here
+        window.location.reload(); // Simple approach - reload to get updated user
+      }
+    }
+
+    if (googleErrorParam) {
+      setGoogleError(decodeURIComponent(googleErrorParam));
+      setGoogleMessage(null);
+      // Clear the URL parameter
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams, accessToken]);
 
   const loadWorkflows = async () => {
     console.log('📊 [DashboardPage] loadWorkflows() called');
@@ -82,6 +113,42 @@ const DashboardPage = () => {
     return date.toLocaleString();
   };
 
+  const handleConnectGoogle = async () => {
+    if (!accessToken) return;
+    
+    setGoogleConnecting(true);
+    setGoogleError(null);
+    setGoogleMessage(null);
+    
+    try {
+      await connectGoogle(accessToken);
+      // The redirect will happen, so we don't need to do anything else
+    } catch (err: any) {
+      console.error('Failed to connect Google:', err);
+      setGoogleError(err.message || 'Failed to connect Google account');
+      setGoogleConnecting(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    if (!accessToken) return;
+    
+    setGoogleDisconnecting(true);
+    setGoogleError(null);
+    setGoogleMessage(null);
+    
+    try {
+      await disconnectGoogle(accessToken);
+      setGoogleMessage('Google account disconnected successfully');
+      // Refresh user data
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Failed to disconnect Google:', err);
+      setGoogleError(err.message || 'Failed to disconnect Google account');
+      setGoogleDisconnecting(false);
+    }
+  };
+
   return (
     <div>
       <Navbar />
@@ -92,6 +159,58 @@ const DashboardPage = () => {
         <p className="text-gray-600 mb-6">
           {user ? 'You are logged in 🎉' : ''}
         </p>
+
+        {/* Google Connection Status */}
+        <div className="mb-8 bg-white border border-gray-200 rounded-lg p-6">
+          <h3 className="text-xl font-semibold mb-4">Google Account</h3>
+          
+          {googleMessage && (
+            <div className="mb-4 p-3 bg-green-100 text-green-800 rounded">
+              {googleMessage}
+            </div>
+          )}
+          
+          {googleError && (
+            <div className="mb-4 p-3 bg-red-100 text-red-800 rounded">
+              {googleError}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-700 mb-2">
+                Status: <span className={`font-semibold ${user?.googleLinked ? 'text-green-600' : 'text-gray-500'}`}>
+                  {user?.googleLinked ? '✓ Connected' : 'Not Connected'}
+                </span>
+              </p>
+              <p className="text-sm text-gray-500">
+                {user?.googleLinked 
+                  ? 'Your Google account is connected. You can use Gmail and Calendar actions in your workflows.'
+                  : 'Connect your Google account to enable Gmail and Calendar actions in your workflows.'}
+              </p>
+            </div>
+            
+            <div className="flex gap-2">
+              {user?.googleLinked ? (
+                <button
+                  onClick={handleDisconnectGoogle}
+                  disabled={googleDisconnecting}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {googleDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+                </button>
+              ) : (
+                <button
+                  onClick={handleConnectGoogle}
+                  disabled={googleConnecting || !accessToken}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {googleConnecting ? 'Connecting...' : 'Connect with Google'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Quick Actions */}
         <div className="mb-8">
