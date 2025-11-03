@@ -28,6 +28,39 @@ export function getRedisConnection(): ConnectionOptions | string {
 }
 
 /**
+ * Get Redis connection as a ConnectionOptions object (required for Queue)
+ */
+export function getRedisConnectionObject(): ConnectionOptions {
+  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  
+  // Parse Redis URL if it's a string
+  if (redisUrl.startsWith('redis://') || redisUrl.startsWith('rediss://')) {
+    try {
+      const url = new URL(redisUrl);
+      return {
+        host: url.hostname || 'localhost',
+        port: url.port ? parseInt(url.port, 10) : 6379,
+        password: url.password || undefined,
+      };
+    } catch {
+      // Fallback if URL parsing fails
+      return {
+        host: 'localhost',
+        port: 6379,
+        password: undefined,
+      };
+    }
+  }
+  
+  // Fallback: parse individual components
+  return {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+    password: process.env.REDIS_PASSWORD,
+  };
+}
+
+/**
  * Default queue options
  */
 export const defaultQueueOptions = {

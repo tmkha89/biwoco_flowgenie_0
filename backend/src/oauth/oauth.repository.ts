@@ -41,7 +41,13 @@ export class OAuthRepository {
     create: Prisma.OAuthAccountCreateInput;
     update: Prisma.OAuthAccountUpdateInput;
   }): Promise<OAuthAccount> {
-    return this.prisma.oAuthAccount.upsert(data);
+    console.log(`🔄 [OAuthRepository] upsert - Storing OAuth account`);
+    console.log(`🔄 [OAuthRepository] upsert - Provider: ${(data.where as any).provider_providerUserId?.provider}, ProviderUserId: ${(data.where as any).provider_providerUserId?.providerUserId}`);
+    console.log(`🔄 [OAuthRepository] upsert - Create data - hasAccessToken: ${!!(data.create as any).accessToken}, hasRefreshToken: ${!!(data.create as any).refreshToken}`);
+    console.log(`🔄 [OAuthRepository] upsert - Update data - hasAccessToken: ${!!(data.update as any).accessToken}, hasRefreshToken: ${!!(data.update as any).refreshToken}`);
+    const result = await this.prisma.oAuthAccount.upsert(data);
+    console.log(`✅ [OAuthRepository] upsert - OAuth account saved with ID: ${result.id}, hasAccessToken: ${!!result.accessToken}, hasRefreshToken: ${!!result.refreshToken}`);
+    return result;
   }
 }
 

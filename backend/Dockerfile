@@ -11,6 +11,8 @@ COPY prisma ./prisma/
 # Install all dependencies (needed for Prisma generation)
 RUN npm ci
 
+# Prisma migrate
+npm run prisma:migrate dev --name add_positions
 # Generate Prisma Client
 RUN npx prisma generate
 

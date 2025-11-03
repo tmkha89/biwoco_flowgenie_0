@@ -1,0 +1,162 @@
+{
+  "name": "User Onboarding Workflow",
+  "description": "A complex workflow demonstrating sequential, parallel, conditional, and loop actions",
+  "enabled": true,
+  "trigger": {
+    "type": "manual",
+    "config": {}
+  },
+  "actions": [
+    {
+      "id": 1,
+      "type": "http_request",
+      "name": "Fetch User Data",
+      "order": 0,
+      "config": {
+        "method": "GET",
+        "url": "https://api.example.com/users/{{trigger.userId}}",
+        "headers": {
+          "Authorization": "Bearer {{trigger.apiKey}}",
+          "Content-Type": "application/json"
+        },
+        "timeout": 5000
+      },
+      "nextActionId": 2,
+      "retryConfig": {
+        "attempts": 3,
+        "backoff": {
+          "type": "exponential",
+          "delay": 1000
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "conditional",
+      "name": "Check User Status",
+      "order": 1,
+      "config": {
+        "condition": "{{step.1.output.data.status}} == 'active'",
+        "trueActionId": 3,
+        "falseActionId": 4
+      },
+      "nextActionId": null
+    },
+    {
+      "id": 3,
+      "type": "parallel",
+      "name": "Send Welcome Communications",
+      "order": 2,
+      "config": {
+        "actionIds": [5, 6],
+        "waitForAll": true,
+        "stopOnFirstFailure": false
+      },
+      "parentActionId": 2,
+      "nextActionId": 7
+    },
+    {
+      "id": 4,
+      "type": "email",
+      "name": "Send Account Verification Email",
+      "order": 3,
+      "config": {
+        "provider": "smtp",
+        "to": "{{step.1.output.data.email}}",
+        "from": "noreply@flowgenie.com",
+        "subject": "Please verify your account",
+        "body": "Hi {{step.1.output.data.name}}, please verify your account.",
+        "htmlBody": "<h1>Verify Your Account</h1><p>Hi {{step.1.output.data.name}}, please click the link to verify.</p>"
+      },
+      "parentActionId": 2,
+      "nextActionId": null
+    },
+    {
+      "id": 5,
+      "type": "email",
+      "name": "Send Welcome Email",
+      "order": 4,
+      "config": {
+        "provider": "smtp",
+        "to": "{{step.1.output.data.email}}",
+        "from": "welcome@flowgenie.com",
+        "subject": "Welcome to FlowGenie!",
+        "htmlBody": "<h1>Welcome {{step.1.output.data.name}}!</h1><p>Thank you for joining FlowGenie.</p>"
+      },
+      "parentActionId": 3
+    },
+    {
+      "id": 6,
+      "type": "http_request",
+      "name": "Create Slack Notification",
+      "order": 5,
+      "config": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "text": "New user onboarded: {{step.1.output.data.name}}"
+        }
+      },
+      "parentActionId": 3
+    },
+    {
+      "id": 7,
+      "type": "wait",
+      "name": "Wait 5 seconds",
+      "order": 6,
+      "config": {
+        "duration": "5s"
+      },
+      "nextActionId": 8
+    },
+    {
+      "id": 8,
+      "type": "loop",
+      "name": "Process User Permissions",
+      "order": 7,
+      "config": {
+        "itemsPath": "step.1.output.data.permissions",
+        "itemVariable": "permission",
+        "loopActionId": 9
+      },
+      "nextActionId": 10
+    },
+    {
+      "id": 9,
+      "type": "http_request",
+      "name": "Grant Permission",
+      "order": 8,
+      "config": {
+        "method": "POST",
+        "url": "https://api.example.com/users/{{trigger.userId}}/permissions",
+        "headers": {
+          "Authorization": "Bearer {{trigger.apiKey}}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "permission": "{{loopContext.item}}",
+          "userId": "{{trigger.userId}}"
+        }
+      },
+      "parentActionId": 8
+    },
+    {
+      "id": 10,
+      "type": "email",
+      "name": "Send Completion Email",
+      "order": 9,
+      "config": {
+        "provider": "smtp",
+        "to": "{{step.1.output.data.email}}",
+        "from": "noreply@flowgenie.com",
+        "subject": "Onboarding Complete",
+        "htmlBody": "<h1>Onboarding Complete!</h1><p>Your account setup is complete, {{step.1.output.data.name}}.</p>"
+      },
+      "nextActionId": null
+    }
+  ]
+}
+

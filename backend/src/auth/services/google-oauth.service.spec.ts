@@ -43,17 +43,22 @@ describe('GoogleOAuthService', () => {
   });
 
   describe('constructor', () => {
-    it('should throw error if GOOGLE_CLIENT_ID is not set', () => {
+    it('should log warning and disable OAuth if GOOGLE_CLIENT_ID is not set', () => {
       const mockConfigService = {
         get: jest.fn().mockReturnValue(''),
       };
 
-      expect(() => {
-        new GoogleOAuthService(mockConfigService as any);
-      }).toThrow('Google OAuth clientID is required');
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      const service = new GoogleOAuthService(mockConfigService as any);
+
+      expect(consoleSpy).toHaveBeenCalled();
+      expect(service).toBeDefined();
+
+      consoleSpy.mockRestore();
     });
 
-    it('should throw error if GOOGLE_CLIENT_SECRET is not set', () => {
+    it('should log warning and disable OAuth if GOOGLE_CLIENT_SECRET is not set', () => {
       const mockConfigService = {
         get: jest.fn((key: string) => {
           if (key === 'GOOGLE_CLIENT_ID') return 'test-client-id';
@@ -62,12 +67,17 @@ describe('GoogleOAuthService', () => {
         }),
       };
 
-      expect(() => {
-        new GoogleOAuthService(mockConfigService as any);
-      }).toThrow('Google OAuth clientSecret is required');
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      const service = new GoogleOAuthService(mockConfigService as any);
+
+      expect(consoleSpy).toHaveBeenCalled();
+      expect(service).toBeDefined();
+
+      consoleSpy.mockRestore();
     });
 
-    it('should throw error if GOOGLE_REDIRECT_URI is not set', () => {
+    it('should log warning and disable OAuth if GOOGLE_REDIRECT_URI is not set', () => {
       const mockConfigService = {
         get: jest.fn((key: string) => {
           if (key === 'GOOGLE_CLIENT_ID') return 'test-client-id';
@@ -77,9 +87,14 @@ describe('GoogleOAuthService', () => {
         }),
       };
 
-      expect(() => {
-        new GoogleOAuthService(mockConfigService as any);
-      }).toThrow('Google OAuth redirect URI is required');
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      const service = new GoogleOAuthService(mockConfigService as any);
+
+      expect(consoleSpy).toHaveBeenCalled();
+      expect(service).toBeDefined();
+
+      consoleSpy.mockRestore();
     });
   });
 

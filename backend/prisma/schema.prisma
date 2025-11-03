@@ -13,15 +13,19 @@ datasource db {
 
 model User {
   id            Int            @id @default(autoincrement())
-  email         String         @unique
+  username      String?        @unique
+  email         String?        @unique
   password      String?
   name          String?
   avatar        String?
+  googleLinked  Boolean        @default(false)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
   oauthAccounts OAuthAccount[]
   refreshTokens RefreshToken[]
+  workflows     Workflow[]
+  executions    Execution[]
 
   @@map("users")
 }
@@ -54,5 +58,110 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
+}
+
+// Workflow System Models
+
+model Workflow {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  name        String
+  description String?
+  enabled     Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trigger    Trigger?
+  actions    Action[]
+  executions Execution[]
+
+  @@map("workflows")
+}
+
+model Trigger {
+  id         Int      @id @default(autoincrement())
+  workflowId Int      @unique
+  type       String   // 'google-mail', 'webhook', 'manual', 'schedule'
+  config     Json     // Trigger-specific configuration (includes OAuth tokens, webhook IDs, cron expressions, etc.)
+  positionX  Float?   // X position on canvas
+  positionY  Float?   // Y position on canvas
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@map("triggers")
+}
+
+model Action {
+  id          Int      @id @default(autoincrement())
+  workflowId  Int
+  type        String   // 'http_request', 'email', 'wait', 'conditional', 'loop', 'parallel', etc.
+  name        String
+  config      Json     // Action-specific configuration
+  order       Int      // Order of execution (0-based, for sequential)
+  nextActionId Int?    // ID of next action to execute (for sequential flow)
+  parentActionId Int?  // ID of parent action (for nested parallel/conditional)
+  retryConfig Json?    // Retry configuration (attempts, backoff)
+  positionX   Float?   // X position on canvas
+  positionY   Float?   // Y position on canvas
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workflow        Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  executionSteps  ExecutionStep[]
+  parentAction    Action?         @relation("ActionParent", fields: [parentActionId], references: [id], onDelete: Cascade)
+  childActions    Action[]        @relation("ActionParent")
+  nextAction      Action?         @relation("ActionSequence", fields: [nextActionId], references: [id], onDelete: SetNull)
+  previousActions Action[]        @relation("ActionSequence")
+
+  @@index([workflowId, order])
+  @@index([parentActionId])
+  @@index([nextActionId])
+  @@map("actions")
+}
+
+model Execution {
+  id         Int            @id @default(autoincrement())
+  workflowId Int
+  userId     Int
+  status     String         // 'pending', 'running', 'completed', 'failed', 'cancelled'
+  triggerData Json?         // Data from trigger event
+  result     Json?          // Final result
+  error      String?        @db.Text
+  startedAt  DateTime?
+  completedAt DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  workflow      Workflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  executionSteps ExecutionStep[]
+
+  @@map("executions")
+}
+
+model ExecutionStep {
+  id          Int       @id @default(autoincrement())
+  executionId Int
+  actionId    Int
+  status      String    // 'pending', 'running', 'completed', 'failed', 'skipped'
+  order       Int       // Order in execution (0-based)
+  input       Json?     // Input data for the step
+  output      Json?     // Output data from the step
+  error       String?   @db.Text
+  retryCount  Int       @default(0)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  execution Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  action    Action    @relation(fields: [actionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@index([actionId])
+  @@map("execution_steps")
 }
 

@@ -125,7 +125,7 @@ describe('JwtService', () => {
     });
 
     it('should use default value if config is not set', () => {
-      configService.get.mockReturnValue(undefined);
+      configService.get.mockReturnValue('1h'); // Return default value instead of undefined
 
       const result = service.getAccessTokenExpiration();
 

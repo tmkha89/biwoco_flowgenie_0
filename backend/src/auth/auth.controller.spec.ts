@@ -12,6 +12,9 @@ describe('AuthController', () => {
     const mockAuthService = {
       getGoogleAuthUrl: jest.fn(),
       googleLogin: jest.fn(),
+      getGoogleConnectUrl: jest.fn(),
+      connectGoogleAccount: jest.fn(),
+      disconnectGoogleAccount: jest.fn(),
       refreshAccessToken: jest.fn(),
       logout: jest.fn(),
       getUserById: jest.fn(),
@@ -57,29 +60,23 @@ describe('AuthController', () => {
   });
 
   describe('googleCallback', () => {
-    const mockAuthResponse = {
-      access_token: 'jwt-token',
-      refresh_token: 'refresh-token',
-      expires_in: 3600,
-      user: {
-        id: 1,
-        email: 'test@example.com',
-        name: 'Test User',
-        avatar: 'https://example.com/avatar.jpg',
-      },
+    const mockState = Buffer.from(JSON.stringify({ userId: 1 })).toString('base64');
+    const mockConnectResponse = {
+      success: true,
+      message: 'Google account connected successfully',
     };
 
     it('should successfully handle OAuth callback and redirect', async () => {
       const originalEnv = process.env.FRONTEND_URL;
       process.env.FRONTEND_URL = 'http://localhost:5173';
       
-      authService.googleLogin.mockResolvedValue(mockAuthResponse);
+      authService.connectGoogleAccount.mockResolvedValue(mockConnectResponse);
 
-      await controller.googleCallback('auth-code', undefined, mockResponse as Response);
+      await controller.googleCallback('auth-code', mockState, undefined, mockResponse as Response);
 
-      expect(authService.googleLogin).toHaveBeenCalledWith('auth-code');
+      expect(authService.connectGoogleAccount).toHaveBeenCalledWith(1, 'auth-code');
       expect(mockResponse.redirect).toHaveBeenCalledWith(
-        expect.stringContaining('http://localhost:5173/oauth-redirect?access_token=jwt-token&refresh_token=refresh-token'),
+        expect.stringContaining('http://localhost:5173/dashboard?googleConnected=true'),
       );
       
       process.env.FRONTEND_URL = originalEnv;
@@ -89,11 +86,11 @@ describe('AuthController', () => {
       const originalEnv = process.env.FRONTEND_URL;
       process.env.FRONTEND_URL = 'http://localhost:5173';
 
-      await controller.googleCallback(undefined, 'access_denied', mockResponse as Response);
+      await controller.googleCallback(undefined, undefined, 'access_denied', mockResponse as Response);
 
-      expect(authService.googleLogin).not.toHaveBeenCalled();
+      expect(authService.connectGoogleAccount).not.toHaveBeenCalled();
       expect(mockResponse.redirect).toHaveBeenCalledWith(
-        expect.stringContaining('http://localhost:5173/login?oauthError='),
+        expect.stringContaining('http://localhost:5173/dashboard?googleError='),
       );
       expect(mockResponse.redirect).toHaveBeenCalledWith(
         expect.stringContaining(encodeURIComponent('OAuth error: access_denied')),
@@ -106,11 +103,11 @@ describe('AuthController', () => {
       const originalEnv = process.env.FRONTEND_URL;
       process.env.FRONTEND_URL = 'http://localhost:5173';
 
-      await controller.googleCallback(undefined, undefined, mockResponse as Response);
+      await controller.googleCallback(undefined, undefined, undefined, mockResponse as Response);
 
-      expect(authService.googleLogin).not.toHaveBeenCalled();
+      expect(authService.connectGoogleAccount).not.toHaveBeenCalled();
       expect(mockResponse.redirect).toHaveBeenCalledWith(
-        expect.stringContaining('http://localhost:5173/login?oauthError='),
+        expect.stringContaining('http://localhost:5173/dashboard?googleError='),
       );
       expect(mockResponse.redirect).toHaveBeenCalledWith(
         expect.stringContaining(encodeURIComponent('Authorization code is missing')),
@@ -123,12 +120,12 @@ describe('AuthController', () => {
       const originalEnv = process.env.FRONTEND_URL;
       process.env.FRONTEND_URL = 'http://localhost:5173';
 
-      authService.googleLogin.mockRejectedValue(new Error('Service error'));
+      authService.connectGoogleAccount.mockRejectedValue(new Error('Service error'));
 
-      await controller.googleCallback('auth-code', undefined, mockResponse as Response);
+      await controller.googleCallback('auth-code', mockState, undefined, mockResponse as Response);
 
       expect(mockResponse.redirect).toHaveBeenCalledWith(
-        expect.stringContaining('http://localhost:5173/login?oauthError='),
+        expect.stringContaining('http://localhost:5173/dashboard?googleError='),
       );
       expect(mockResponse.redirect).toHaveBeenCalledWith(
         expect.stringContaining(encodeURIComponent('Service error')),
@@ -191,7 +188,7 @@ describe('AuthController', () => {
   describe('login', () => {
     it('should successfully login user', async () => {
       const loginDto = {
-        email: 'test@example.com',
+        username: 'testuser',
         password: 'password123',
       };
       const expectedResult = {
@@ -200,9 +197,11 @@ describe('AuthController', () => {
         expires_in: 3600,
         user: {
           id: 1,
+          username: 'testuser',
           email: 'test@example.com',
           name: 'Test User',
           avatar: null,
+          googleLinked: false,
         },
       };
 
@@ -219,6 +218,7 @@ describe('AuthController', () => {
     it('should successfully signup new user', async () => {
       const signupDto = {
         name: 'New User',
+        username: 'newuser',
         email: 'newuser@example.com',
         password: 'password123',
       };
@@ -228,8 +228,10 @@ describe('AuthController', () => {
         expires_in: 3600,
         user: {
           id: 1,
+          username: 'newuser',
           email: 'newuser@example.com',
           name: 'New User',
+          googleLinked: false,
         },
       };
 

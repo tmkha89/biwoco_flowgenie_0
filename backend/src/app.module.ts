@@ -6,6 +6,7 @@ import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { OAuthModule } from './oauth/oauth.module';
+import { WorkflowModule } from './workflows/workflow.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { OAuthModule } from './oauth/oauth.module';
     UsersModule,
     OAuthModule,
     AuthModule,
+    WorkflowModule,
   ],
   controllers: [AppController],
   providers: [AppService],

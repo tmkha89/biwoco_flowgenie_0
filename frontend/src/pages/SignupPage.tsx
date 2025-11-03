@@ -4,6 +4,7 @@ import { AuthContext } from '../context/AuthContext';
 
 export default function Signup() {
   const { setTokens } = useContext(AuthContext);
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -12,7 +13,7 @@ export default function Signup() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const data = await signup(name, email, password);
+      const data = await signup(name, username, email || undefined, password);
       setTokens(data.access_token, data.refresh_token);
       window.location.href = '/dashboard';
     } catch (err: any) {
@@ -31,11 +32,20 @@ export default function Signup() {
           placeholder="Full name"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          required
+        />
+        <input
+          type="text"
+          className="w-full border p-2 mb-3 rounded"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
         />
         <input
           type="email"
           className="w-full border p-2 mb-3 rounded"
-          placeholder="Email"
+          placeholder="Email (optional)"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />

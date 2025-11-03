@@ -2,11 +2,21 @@
 
 # dependencies
 */node_modules
+*/dist
+*/node_modules/
+*/dist/
 */.pnp
 */.pnp.js
+*/yarn.lock
+*/pnpm-lock.yaml
+*/bun.lockb
+*/pnpm-workspace.yaml
+*/pnpm-workspace.yaml
 
 # testing
 */coverage
+*/sonarqube
+*/.scannerwork
 
 # next.js
 */.next/
@@ -34,3 +44,13 @@
 # typescript
 */*.tsbuildinfo
 */next-env.d.ts
+
+# documentation
+*.md
+
+# static files
+*.7z
+*.zip
+*.rar
+*.sonarqube
+*.txt
