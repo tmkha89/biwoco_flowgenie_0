@@ -72,6 +72,19 @@ export const updateWorkflow = async (
 };
 
 /**
+ * Toggle workflow enabled status
+ */
+export const toggleWorkflow = async (id: number, enabled: boolean): Promise<WorkflowResponse> => {
+  try {
+    console.log(`📡 [API] PUT /workflows/${id} - Toggle enabled status`, { enabled });
+    return await updateWorkflow(id, { enabled });
+  } catch (err: any) {
+    console.error(`❌ [API] Toggle workflow ${id} - Error:`, err);
+    throw err;
+  }
+};
+
+/**
  * Delete a workflow
  */
 export const deleteWorkflow = async (id: number): Promise<void> => {
