@@ -51,35 +51,21 @@ export const googleLogin = async (token: string) => {
 
 // Google OAuth2 - Connect Google account (requires authentication)
 export const connectGoogle = async (accessToken: string) => {
-  console.log('📡 [API] GET /auth/google/connect - Request sent');
-  // Note: We need to make a request that includes the Authorization header
-  // Since this is a redirect endpoint, we'll use fetch with credentials
-  // But for simplicity, we can just redirect and let the backend handle auth via cookie/session
-  // For now, we'll use fetch to get the redirect URL, then navigate to it
-  try {
-    const response = await fetch(`${API_URL}/auth/google/connect`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      redirect: 'manual', // Don't follow redirect automatically
-    });
-    
-    // If we get a redirect response, navigate to the Location header
-    if (response.status === 302 || response.status === 307 || response.status === 308) {
-      const location = response.headers.get('Location');
-      if (location) {
-        window.location.href = location;
-        return;
-      }
+  console.log('📡 [API] POST /auth/google/connect - Request sent');
+  const res = await axios.post(
+    `${API_URL}/auth/google/connect`,
+    {},
+    {
+      headers: { Authorization: `Bearer ${accessToken}` }
     }
-    
-    // Fallback: just redirect directly
-    window.location.href = `${API_URL}/auth/google/connect`;
-  } catch (err) {
-    console.error('Error connecting Google:', err);
-    // Fallback: just redirect directly
-    window.location.href = `${API_URL}/auth/google/connect`;
+  );
+  console.log('✅ [API] POST /auth/google/connect - Response received', { hasUrl: !!res.data.url });
+  
+  // Redirect to the OAuth URL
+  if (res.data.url) {
+    window.location.href = res.data.url;
+  } else {
+    throw new Error('No OAuth URL received from server');
   }
 };
 

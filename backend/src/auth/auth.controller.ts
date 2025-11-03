@@ -335,24 +335,35 @@ export class AuthController {
   /**
    * @openapi
    * /auth/google/connect:
-   *   get:
-   *     summary: Initiate Google OAuth connection flow
-   *     description: Redirects authenticated user to Google OAuth consent screen to connect their Google account.
+   *   post:
+   *     summary: Get Google OAuth connection URL
+   *     description: Returns the Google OAuth authorization URL for authenticated user to connect their Google account.
    *     tags:
    *       - Authentication
    *     security:
    *       - bearerAuth: []
    *     responses:
-   *       302:
-   *         description: Redirect to Google OAuth
+   *       200:
+   *         description: OAuth URL returned successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 url:
+   *                   type: string
+   *                   description: Google OAuth authorization URL
    *       401:
    *         description: Unauthorized
    */
-  @Get('google/connect')
+  @Post('google/connect')
   @UseGuards(JwtAuthGuard)
-  async googleConnect(@CurrentUser() user: { id: number }, @Res() res: Response): Promise<void> {
+  async googleConnect(@CurrentUser() user: { id: number }): Promise<{ url: string }> {
+    console.log(`🔗 [AuthController] Google Connect - User ${user.id} requesting OAuth URL`);
     const authUrl = this.authService.getGoogleConnectUrl(user.id);
-    return res.redirect(authUrl);
+    console.log(`🔗 [AuthController] Google Connect - Generated OAuth URL for user ${user.id}`);
+    console.log(`🔗 [AuthController] Google Connect - OAuth URL: ${authUrl.substring(0, 100)}...`);
+    return { url: authUrl };
   }
 
   /**
@@ -408,46 +419,60 @@ export class AuthController {
     @Query('error') error: string,
     @Res() res: Response,
   ): Promise<void> {
+    console.log('📥 [AuthController] Google Callback - OAuth callback received');
+    console.log(`📥 [AuthController] Google Callback - Query params: code=${code ? 'present' : 'missing'}, state=${state ? 'present' : 'missing'}, error=${error || 'none'}`);
+    
     const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
     const SUCCESS_ROUTE = '/dashboard'; // Redirect to dashboard on success
 
     // Error handling
     if (error) {
+      console.error(`❌ [AuthController] Google Callback - OAuth error: ${error}`);
       const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleError=${encodeURIComponent(`OAuth error: ${error}`)}`;
       return res.redirect(redirectUrl);
     }
 
     if (!code) {
+      console.error('❌ [AuthController] Google Callback - Authorization code is missing');
       const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleError=${encodeURIComponent('Authorization code is missing')}`;
       return res.redirect(redirectUrl);
     }
 
     // Verify state contains user ID
     if (!state) {
+      console.error('❌ [AuthController] Google Callback - State parameter is missing');
       const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleError=${encodeURIComponent('State parameter is missing')}`;
       return res.redirect(redirectUrl);
     }
 
     let userId: number;
     try {
+      console.log(`🔍 [AuthController] Google Callback - Parsing state parameter`);
       const stateData = JSON.parse(Buffer.from(state, 'base64').toString('utf-8'));
+      console.log(`🔍 [AuthController] Google Callback - State data:`, stateData);
       if (!stateData.userId) {
         throw new Error('Invalid state: userId missing');
       }
       userId = stateData.userId;
-    } catch (e) {
+      console.log(`✅ [AuthController] Google Callback - Extracted userId: ${userId}`);
+    } catch (e: any) {
+      console.error(`❌ [AuthController] Google Callback - Failed to parse state: ${e.message}`);
       const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleError=${encodeURIComponent('Invalid state parameter')}`;
       return res.redirect(redirectUrl);
     }
 
     try {
+      console.log(`🔄 [AuthController] Google Callback - Connecting Google account for user ${userId}`);
       // Connect Google account
       await this.authService.connectGoogleAccount(userId, code);
+      console.log(`✅ [AuthController] Google Callback - Successfully connected Google account for user ${userId}`);
       
       // Redirect to frontend with success message
       const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleConnected=true`;
+      console.log(`🔄 [AuthController] Google Callback - Redirecting to: ${redirectUrl}`);
       return res.redirect(redirectUrl);
     } catch (err: any) {
+      console.error(`❌ [AuthController] Google Callback - Error connecting Google account:`, err.message || err);
       const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleError=${encodeURIComponent(err.message || 'Failed to connect Google account')}`;
       return res.redirect(redirectUrl);
     }

@@ -7,7 +7,7 @@ import { connectGoogle, disconnectGoogle } from '../api/auth';
 import type { WorkflowResponse, ExecutionResponse, WorkflowStatus } from '../types/workflows';
 
 const DashboardPage = () => {
-  const { user, isAuthenticated, isInitializing, accessToken } = useAuth();
+  const { user, isAuthenticated, isInitializing, accessToken, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [workflows, setWorkflows] = useState<WorkflowResponse[]>([]);
@@ -18,6 +18,32 @@ const DashboardPage = () => {
   const [googleDisconnecting, setGoogleDisconnecting] = useState(false);
   const [googleMessage, setGoogleMessage] = useState<string | null>(null);
   const [googleError, setGoogleError] = useState<string | null>(null);
+
+  // Handle OAuth callback messages FIRST (before loading data)
+  useEffect(() => {
+    const googleConnected = searchParams.get('googleConnected');
+    const googleErrorParam = searchParams.get('googleError');
+
+    if (googleConnected === 'true') {
+      setGoogleMessage('Google account connected successfully!');
+      setGoogleError(null);
+      // Clear the URL parameter
+      setSearchParams({});
+      // Refresh user data to get updated googleLinked status (instead of reloading)
+      if (accessToken && refreshUser) {
+        refreshUser().catch(err => {
+          console.error('Failed to refresh user after Google connection:', err);
+        });
+      }
+    }
+
+    if (googleErrorParam) {
+      setGoogleError(decodeURIComponent(googleErrorParam));
+      setGoogleMessage(null);
+      // Clear the URL parameter
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams, accessToken, refreshUser]);
 
   useEffect(() => {
     console.log('📊 [DashboardPage] Component mounted', { isInitializing, isAuthenticated });
@@ -35,32 +61,7 @@ const DashboardPage = () => {
         loadExecutions();
       }
     }
-  }, [isAuthenticated, isInitializing, navigate]);
-
-  // Handle OAuth callback messages
-  useEffect(() => {
-    const googleConnected = searchParams.get('googleConnected');
-    const googleErrorParam = searchParams.get('googleError');
-
-    if (googleConnected === 'true') {
-      setGoogleMessage('Google account connected successfully!');
-      setGoogleError(null);
-      // Clear the URL parameter
-      setSearchParams({});
-      // Refresh user data to get updated googleLinked status
-      if (accessToken) {
-        // You might want to refresh user data here
-        window.location.reload(); // Simple approach - reload to get updated user
-      }
-    }
-
-    if (googleErrorParam) {
-      setGoogleError(decodeURIComponent(googleErrorParam));
-      setGoogleMessage(null);
-      // Clear the URL parameter
-      setSearchParams({});
-    }
-  }, [searchParams, setSearchParams, accessToken]);
+  }, [isAuthenticated, isInitializing, navigate, searchParams]);
 
   const loadWorkflows = async () => {
     console.log('📊 [DashboardPage] loadWorkflows() called');

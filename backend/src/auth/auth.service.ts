@@ -172,36 +172,54 @@ export class AuthService {
   }
 
   getGoogleConnectUrl(userId: number): string {
+    console.log(`🔗 [AuthService] getGoogleConnectUrl - Generating OAuth URL for user ${userId}`);
     // Include userId in state for callback verification
     const state = Buffer.from(JSON.stringify({ userId })).toString('base64');
-    return this.googleOAuthService.getAuthorizationUrl(state);
+    console.log(`🔗 [AuthService] getGoogleConnectUrl - Created state parameter (base64): ${state.substring(0, 50)}...`);
+    const authUrl = this.googleOAuthService.getAuthorizationUrl(state);
+    console.log(`✅ [AuthService] getGoogleConnectUrl - OAuth URL generated successfully`);
+    return authUrl;
   }
 
   async connectGoogleAccount(userId: number, code: string): Promise<{ success: boolean; message: string }> {
+    console.log(`🔄 [AuthService] connectGoogleAccount - Starting Google account connection for user ${userId}`);
+    console.log(`🔄 [AuthService] connectGoogleAccount - Authorization code received: ${code.substring(0, 20)}...`);
+    
     // Exchange code for tokens
+    console.log(`🔄 [AuthService] connectGoogleAccount - Exchanging authorization code for tokens`);
     const tokens = await this.googleOAuthService.exchangeCodeForTokens(code);
+    console.log(`✅ [AuthService] connectGoogleAccount - Tokens received: access_token=${tokens.access_token ? 'present' : 'missing'}, refresh_token=${tokens.refresh_token ? 'present' : 'missing'}, expires_in=${tokens.expires_in}`);
 
     // Get user info from ID token or access token
+    console.log(`🔄 [AuthService] connectGoogleAccount - Getting user info from ID token`);
     let userInfo = await this.googleOAuthService.decodeIdToken(tokens.id_token);
     if (!userInfo) {
+      console.log(`⚠️ [AuthService] connectGoogleAccount - ID token decode failed, trying access token`);
       userInfo = await this.googleOAuthService.getUserInfo(tokens.access_token);
     }
 
     if (!userInfo || !userInfo.email || !userInfo.verified_email) {
+      console.error(`❌ [AuthService] connectGoogleAccount - Invalid Google account info`);
       throw new UnauthorizedException('Invalid Google account');
     }
 
+    console.log(`✅ [AuthService] connectGoogleAccount - User info retrieved: email=${userInfo.email}, id=${userInfo.id}, name=${userInfo.name}`);
+
     // Verify user exists
+    console.log(`🔄 [AuthService] connectGoogleAccount - Verifying user ${userId} exists`);
     const user = await this.usersService.findById(userId);
     if (!user) {
+      console.error(`❌ [AuthService] connectGoogleAccount - User ${userId} not found`);
       throw new UnauthorizedException('User not found');
     }
+    console.log(`✅ [AuthService] connectGoogleAccount - User ${userId} verified`);
 
     // Create or update OAuth account
     const expiresAt = tokens.expires_in
       ? new Date(Date.now() + tokens.expires_in * 1000)
       : undefined;
 
+    console.log(`🔄 [AuthService] connectGoogleAccount - Storing OAuth account: provider=google, providerUserId=${userInfo.id}, expiresAt=${expiresAt?.toISOString() || 'none'}`);
     await this.oAuthService.upsertOAuthAccount({
       userId: user.id,
       provider: 'google',
@@ -210,10 +228,14 @@ export class AuthService {
       refreshToken: tokens.refresh_token,
       expiresAt,
     });
+    console.log(`✅ [AuthService] connectGoogleAccount - OAuth account stored successfully`);
 
     // Mark user as Google linked
+    console.log(`🔄 [AuthService] connectGoogleAccount - Marking user ${userId} as googleLinked=true`);
     await this.usersService.updateUser(userId, { googleLinked: true });
+    console.log(`✅ [AuthService] connectGoogleAccount - User ${userId} marked as Google linked`);
 
+    console.log(`✅ [AuthService] connectGoogleAccount - Google account connection completed successfully for user ${userId}`);
     return {
       success: true,
       message: 'Google account connected successfully',
