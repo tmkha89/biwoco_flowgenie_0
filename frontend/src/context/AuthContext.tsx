@@ -21,6 +21,7 @@ interface AuthContextType {
   logout: () => void;
   login: (username: string, password: string) => Promise<void>;
   loginWithGoogle: (token: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
   isInitializing: boolean;
 }
 
@@ -65,6 +66,36 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // If fetching user fails, log out to clear bad tokens
         logout();
         throw error;
+    }
+  };
+
+  const refreshUser = async () => {
+    console.log('🔄 [AuthContext] refreshUser() called');
+    if (accessToken) {
+      try {
+        const userData = await getCurrentUser(accessToken);
+        console.log('🔄 [AuthContext] User data refreshed:', { id: userData.id, email: userData.email });
+        setUser(userData);
+        console.log('✅ [AuthContext] User state updated');
+      } catch (error) {
+        console.error("❌ [AuthContext] Failed to refresh user", error);
+        // If refresh fails, try to refresh the token
+        if (refreshTokenValue) {
+          try {
+            const { access_token } = await apiRefreshToken(refreshTokenValue);
+            setAccessToken(access_token);
+            localStorage.setItem('access_token', access_token);
+            const userData = await getCurrentUser(access_token);
+            setUser(userData);
+            console.log('✅ [AuthContext] Token refreshed and user data updated');
+          } catch (refreshError) {
+            console.error('❌ [AuthContext] Token refresh failed', refreshError);
+            logout();
+          }
+        } else {
+          logout();
+        }
+      }
     }
   };
 
@@ -160,6 +191,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isAuthenticated: !!accessToken,
       login,
       loginWithGoogle,
+      refreshUser,
       isInitializing
     }}>
       {children}
