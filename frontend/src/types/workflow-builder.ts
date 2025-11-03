@@ -39,14 +39,12 @@ export const ACTION_TYPES: ActionTypeConfig[] = [
   },
   {
     type: ActionType.EMAIL,
-    name: 'Send Email',
-    description: 'Send an email via SMTP, Gmail, or SendGrid',
+    name: 'Send Google Email',
+    description: 'Send an email via Google (requires OAuth2 authentication)',
     icon: '📧',
     color: 'bg-green-500',
     defaultConfig: {
-      provider: 'smtp',
       to: '',
-      from: '',
       subject: '',
       body: '',
     },

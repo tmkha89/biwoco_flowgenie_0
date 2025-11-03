@@ -10,6 +10,7 @@ import { TriggerRegistry } from './triggers/trigger.registry';
 import { ActionRegistry } from './actions/action.registry';
 import { ActionFactory } from './actions/action.factory';
 import { DatabaseModule } from '../database/database.module';
+import { AuthModule } from '../auth/auth.module';
 import { Queue } from 'bullmq';
 import { getRedisConnectionObject } from '../queues/queue.config';
 
@@ -41,6 +42,7 @@ import { ParallelActionHandler } from './actions/parallel.action';
 @Module({
   imports: [
     DatabaseModule,
+    AuthModule,
     EventEmitterModule.forRoot(),
   ],
   controllers: [WorkflowController, TriggerController],

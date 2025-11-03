@@ -2,7 +2,7 @@
  * Main Workflow Builder Page with drag-and-drop interface
  */
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import { useWorkflowBuilderStore } from '../store/workflow-builder.store';
@@ -19,10 +19,35 @@ import type { WorkflowResponse } from '../types/workflows';
 const WorkflowBuilderPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated, isInitializing } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { isAuthenticated, isInitializing, refreshUser } = useAuth();
   const { setNodes, setEdges, loadWorkflow, reset, nodes, addNode } = useWorkflowBuilderStore();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Handle OAuth callback messages (googleConnected/googleError)
+  useEffect(() => {
+    const googleConnected = searchParams.get('googleConnected');
+    const googleErrorParam = searchParams.get('googleError');
+
+    if (googleConnected === 'true') {
+      console.log('✅ [WorkflowBuilderPage] Google connected successfully, refreshing user data');
+      // Clear the URL parameter
+      setSearchParams({}, { replace: true });
+      // Refresh user data to get updated googleLinked status
+      if (refreshUser) {
+        refreshUser().catch(err => {
+          console.error('❌ [WorkflowBuilderPage] Failed to refresh user after Google connection:', err);
+        });
+      }
+    }
+
+    if (googleErrorParam) {
+      console.error('❌ [WorkflowBuilderPage] Google connection error:', decodeURIComponent(googleErrorParam));
+      // Clear the URL parameter
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams, refreshUser]);
 
   useEffect(() => {
     console.log('🎨 [WorkflowBuilderPage] Component mounted', { isInitializing, isAuthenticated, workflowId: id });

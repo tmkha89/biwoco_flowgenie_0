@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { OAuth2Client } from 'google-auth-library';
 
 export interface GoogleTokenResponse {
   access_token: string;
@@ -71,6 +72,13 @@ export class GoogleOAuthService {
     console.log(`🔗 [GoogleOAuthService] getAuthorizationUrl - Redirect URI: ${this.redirectUri}`);
     console.log(`🔗 [GoogleOAuthService] getAuthorizationUrl - State: ${state ? 'present' : 'none'}`);
 
+    // Create OAuth2Client instance
+    const oauth2Client = new OAuth2Client({
+      clientId: this.clientId,
+      clientSecret: this.clientSecret,
+      redirectUri: this.redirectUri,
+    });
+
     // Required OAuth2 scopes for Gmail and Calendar
     const scopes = [
       'https://www.googleapis.com/auth/userinfo.email',
@@ -78,25 +86,29 @@ export class GoogleOAuthService {
       'https://www.googleapis.com/auth/gmail.send',
       'https://www.googleapis.com/auth/gmail.modify',
       'https://www.googleapis.com/auth/calendar',
-    ].join(' ');
+      'https://mail.google.com',
+    ];
 
-    console.log(`🔗 [GoogleOAuthService] getAuthorizationUrl - Scopes: ${scopes}`);
+    console.log(`🔗 [GoogleOAuthService] getAuthorizationUrl - Scopes: ${scopes.join(' ')}`);
 
-    const params = new URLSearchParams({
-      client_id: this.clientId,
-      redirect_uri: this.redirectUri,
-      response_type: 'code',
-      scope: scopes,
+    // Generate authorization URL using googleapis
+    const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
+      scope: scopes,
       prompt: 'consent',
+      state: state,
     });
-
-    if (state) {
-      params.append('state', state);
+    
+    console.log(`✅ [GoogleOAuthService] getAuthorizationUrl - Authorization URL: ${authUrl}`);
+    
+    // Validate URL format
+    if (!authUrl || !authUrl.startsWith('https://accounts.google.com')) {
+      throw new Error(`Invalid OAuth URL generated: ${authUrl ? authUrl.substring(0, 100) : 'null'}`);
     }
-
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-    console.log(`✅ [GoogleOAuthService] getAuthorizationUrl - Authorization URL generated`);
+    
+    console.log(`✅ [GoogleOAuthService] getAuthorizationUrl - Authorization URL generated using googleapis`);
+    console.log(`✅ [GoogleOAuthService] getAuthorizationUrl - Full URL length: ${authUrl.length} characters`);
+    console.log(`✅ [GoogleOAuthService] getAuthorizationUrl - Full URL: ${authUrl}`);
     return authUrl;
   }
 

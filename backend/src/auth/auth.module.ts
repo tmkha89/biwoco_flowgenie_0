@@ -39,7 +39,7 @@ import { OAuthModule } from '../oauth/oauth.module';
     GoogleOAuthService,
     RefreshTokenRepository,
   ],
-  exports: [AuthService, JwtService],
+  exports: [AuthService, JwtService, GoogleOAuthService],
 })
 export class AuthModule {}
 

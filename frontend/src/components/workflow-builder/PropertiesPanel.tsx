@@ -5,6 +5,7 @@ import { useWorkflowBuilderStore } from '../../store/workflow-builder.store';
 import { ActionType } from '../../types/workflow-builder';
 import { TriggerType } from '../../types/workflows';
 import { useAuth } from '../../context/AuthContext';
+import { connectGoogle } from '../../api/auth';
 
 const PropertiesPanel = () => {
   const { selectedNode, updateNode, deleteNode, setTrigger, trigger, workflowMeta, setWorkflowMeta } = useWorkflowBuilderStore();
@@ -462,6 +463,37 @@ const PropertiesPanel = () => {
       {/* Email Config */}
       {selectedNode.data.type === ActionType.EMAIL && (
         <div className="space-y-4">
+          {!user?.googleLinked && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-amber-800 mb-2">
+                Google Account Required
+              </h4>
+              <p className="text-sm text-amber-700 mb-3">
+                You need to connect your Google account to send emails via Gmail.
+              </p>
+              <button
+                onClick={() => {
+                  const accessToken = localStorage.getItem('access_token');
+                  if (accessToken) {
+                    connectGoogle(accessToken);
+                  }
+                }}
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                Connect Google Account
+              </button>
+            </div>
+          )}
+          {user?.googleLinked && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-blue-600">✓</span>
+                <span className="text-sm text-blue-800 font-medium">
+                  Google account connected: {user.email}
+                </span>
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
             <input
@@ -470,16 +502,6 @@ const PropertiesPanel = () => {
               onChange={(e) => handleConfigChange('to', e.target.value)}
               className="w-full border border-gray-300 rounded px-3 py-2"
               placeholder="recipient@example.com"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
-            <input
-              type="email"
-              value={selectedNode.data.config.from || ''}
-              onChange={(e) => handleConfigChange('from', e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2"
-              placeholder="sender@example.com"
             />
           </div>
           <div>

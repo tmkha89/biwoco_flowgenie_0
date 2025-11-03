@@ -79,8 +79,19 @@ export class AuthController {
 
   @Get('google')
   async googleAuth(@Res() res: Response): Promise<void> {
-    const authUrl = this.authService.getGoogleAuthUrl();
-    return res.redirect(authUrl);
+    console.log('🔐 [AuthController] Google Auth - Google login initiated');
+    try {
+      const authUrl = this.authService.getGoogleAuthUrl();
+      console.log('🔐 [AuthController] Google Auth - Generated OAuth URL');
+      console.log('🔐 [AuthController] Google Auth - Full OAuth URL:', authUrl);
+      console.log('🔐 [AuthController] Google Auth - URL starts with https://accounts.google.com:', authUrl.startsWith('https://accounts.google.com'));
+      console.log('🔐 [AuthController] Google Auth - URL length:', authUrl.length);
+      console.log('🔐 [AuthController] Google Auth - Redirecting to Google OAuth');
+      return res.redirect(authUrl);
+    } catch (error: any) {
+      console.error('❌ [AuthController] Google Auth - Error generating OAuth URL:', error.message);
+      throw error;
+    }
   }
 
 
@@ -424,27 +435,43 @@ export class AuthController {
     
     const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
     const SUCCESS_ROUTE = '/dashboard'; // Redirect to dashboard on success
+    const LOGIN_ROUTE = '/login'; // Redirect to login on error
 
     // Error handling
     if (error) {
       console.error(`❌ [AuthController] Google Callback - OAuth error: ${error}`);
-      const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleError=${encodeURIComponent(`OAuth error: ${error}`)}`;
+      const redirectUrl = `${FRONTEND_URL}${LOGIN_ROUTE}?googleError=${encodeURIComponent(`OAuth error: ${error}`)}`;
       return res.redirect(redirectUrl);
     }
 
     if (!code) {
       console.error('❌ [AuthController] Google Callback - Authorization code is missing');
-      const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleError=${encodeURIComponent('Authorization code is missing')}`;
+      const redirectUrl = `${FRONTEND_URL}${LOGIN_ROUTE}?googleError=${encodeURIComponent('Authorization code is missing')}`;
       return res.redirect(redirectUrl);
     }
 
-    // Verify state contains user ID
+    // Handle two scenarios:
+    // 1. Initial login without state -> use googleLogin (creates user and gets tokens)
+    // 2. Connect existing account with state containing userId -> use connectGoogleAccount
     if (!state) {
-      console.error('❌ [AuthController] Google Callback - State parameter is missing');
-      const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleError=${encodeURIComponent('State parameter is missing')}`;
-      return res.redirect(redirectUrl);
+      // No state = initial login flow
+      try {
+        console.log(`🔄 [AuthController] Google Callback - No state, treating as initial login`);
+        const result = await this.authService.googleLogin(code);
+        console.log(`✅ [AuthController] Google Callback - Initial login successful for user ${result.user.id}`);
+        
+        // Store tokens in cookies or return them via URL (for now, redirect to callback with tokens)
+        const redirectUrl = `${FRONTEND_URL}/oauth-redirect?access_token=${result.access_token}&refresh_token=${result.refresh_token}&googleLinked=${result.user.googleLinked}`;
+        console.log(`🔄 [AuthController] Google Callback - Redirecting to oauth-redirect`);
+        return res.redirect(redirectUrl);
+      } catch (err: any) {
+        console.error(`❌ [AuthController] Google Callback - Initial login error:`, err.message || err);
+        const redirectUrl = `${FRONTEND_URL}${LOGIN_ROUTE}?googleError=${encodeURIComponent(err.message || 'Login failed')}`;
+        return res.redirect(redirectUrl);
+      }
     }
 
+    // State exists = connecting existing account
     let userId: number;
     try {
       console.log(`🔍 [AuthController] Google Callback - Parsing state parameter`);
