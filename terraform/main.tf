@@ -119,15 +119,15 @@ module "api" {
   stage      = var.stage
   aws_region = var.aws_region
 
-  vpc_id                = module.vpc.vpc_id
-  subnet_ids            = module.vpc.private_subnet_ids
-  security_group_ids    = [module.backend_security_group.security_group_id]
-  rds_endpoint          = module.rds.address
-  redis_endpoint        = module.elasticache.endpoint
-  redis_auth_token      = module.elasticache.auth_token
-  db_name               = var.db_name
-  db_username           = var.db_username
-  db_password           = var.db_password
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.private_subnet_ids
+  security_group_ids = [module.backend_security_group.security_group_id]
+  rds_endpoint       = module.rds.address
+  redis_endpoint     = module.elasticache.endpoint
+  redis_auth_token   = module.elasticache.auth_token
+  db_name            = var.db_name
+  db_username        = var.db_username
+  db_password        = var.db_password
 
   environment_variables = var.backend_environment_variables
 

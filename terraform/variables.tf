@@ -53,15 +53,15 @@ variable "amplify_branch_name" {
 # Environment Variables
 variable "backend_environment_variables" {
   description = "Environment variables for backend Lambda/ECS"
-  type = map(string)
-  default = {}
-  sensitive = true
+  type        = map(string)
+  default     = {}
+  sensitive   = true
 }
 
 variable "frontend_environment_variables" {
   description = "Environment variables for frontend Amplify app"
-  type = map(string)
-  default = {}
-  sensitive = true
+  type        = map(string)
+  default     = {}
+  sensitive   = true
 }
 

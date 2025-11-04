@@ -50,26 +50,26 @@ resource "aws_cloudwatch_log_group" "lambda" {
 
 # Lambda Function
 resource "aws_lambda_function" "api" {
-  filename         = var.lambda_deployment_package
-  function_name    = "${var.stage}-flowgenie-api"
-  role            = aws_iam_role.lambda.arn
-  handler         = var.lambda_handler
-  runtime         = var.lambda_runtime
-  timeout         = var.lambda_timeout
-  memory_size     = var.lambda_memory_size
+  filename      = var.lambda_deployment_package
+  function_name = "${var.stage}-flowgenie-api"
+  role          = aws_iam_role.lambda.arn
+  handler       = var.lambda_handler
+  runtime       = var.lambda_runtime
+  timeout       = var.lambda_timeout
+  memory_size   = var.lambda_memory_size
 
   vpc_config {
     subnet_ids         = var.subnet_ids
     security_group_ids = var.security_group_ids
   }
 
-      environment {
+  environment {
     variables = merge(
       {
-        STAGE           = var.stage
-        NODE_ENV        = var.stage == "prod" ? "production" : var.stage
-        DATABASE_URL    = "postgresql://${var.db_username}:${var.db_password}@${var.rds_endpoint}:5432/${var.db_name}"
-        REDIS_URL       = var.redis_endpoint != "" ? "redis://${var.redis_endpoint}:6379" : ""
+        STAGE            = var.stage
+        NODE_ENV         = var.stage == "prod" ? "production" : var.stage
+        DATABASE_URL     = "postgresql://${var.db_username}:${var.db_password}@${var.rds_endpoint}:5432/${var.db_name}"
+        REDIS_URL        = var.redis_endpoint != "" ? "redis://${var.redis_endpoint}:6379" : ""
         REDIS_AUTH_TOKEN = var.redis_auth_token != "" ? var.redis_auth_token : ""
       },
       var.environment_variables
@@ -178,8 +178,8 @@ resource "aws_api_gateway_deployment" "main" {
 # API Gateway Stage
 resource "aws_api_gateway_stage" "main" {
   deployment_id = aws_api_gateway_deployment.main.id
-  rest_api_id  = aws_api_gateway_rest_api.main.id
-  stage_name   = var.stage
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  stage_name    = var.stage
 
   tags = merge(
     var.tags,

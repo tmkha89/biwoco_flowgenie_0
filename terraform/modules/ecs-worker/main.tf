@@ -105,10 +105,10 @@ resource "aws_ecr_repository" "worker" {
 resource "aws_ecs_task_definition" "worker" {
   family                   = "${var.stage}-flowgenie-worker"
   network_mode             = "awsvpc"
-  requires_compatibilities  = ["FARGATE"]
+  requires_compatibilities = ["FARGATE"]
   cpu                      = var.task_cpu
   memory                   = var.task_memory
-  execution_role_arn        = aws_iam_role.ecs_execution.arn
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([
@@ -120,14 +120,14 @@ resource "aws_ecs_task_definition" "worker" {
       environment = [
         for key, value in merge(
           {
-            STAGE           = var.stage
-            NODE_ENV        = var.stage == "prod" ? "production" : var.stage
-            DATABASE_URL    = "postgresql://${var.db_username}:${var.db_password}@${var.rds_endpoint}:5432/${var.db_name}"
-            REDIS_URL       = var.redis_endpoint != "" ? "redis://${var.redis_endpoint}:6379" : ""
+            STAGE            = var.stage
+            NODE_ENV         = var.stage == "prod" ? "production" : var.stage
+            DATABASE_URL     = "postgresql://${var.db_username}:${var.db_password}@${var.rds_endpoint}:5432/${var.db_name}"
+            REDIS_URL        = var.redis_endpoint != "" ? "redis://${var.redis_endpoint}:6379" : ""
             REDIS_AUTH_TOKEN = var.redis_auth_token != "" ? var.redis_auth_token : ""
           },
           var.environment_variables
-        ) : {
+          ) : {
           name  = key
           value = value
         }

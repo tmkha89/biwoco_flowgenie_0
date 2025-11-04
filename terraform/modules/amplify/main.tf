@@ -25,7 +25,7 @@ resource "aws_amplify_app" "main" {
 
   environment_variables = merge(
     {
-      AMPLIFY_DIFF_DEPLOY = "false"
+      AMPLIFY_DIFF_DEPLOY       = "false"
       AMPLIFY_MONOREPO_APP_ROOT = "frontend"
     },
     var.environment_variables
@@ -44,7 +44,7 @@ resource "aws_amplify_branch" "main" {
   app_id      = aws_amplify_app.main.id
   branch_name = var.branch_name
 
-  enable_auto_build = true
+  enable_auto_build           = true
   enable_pull_request_preview = var.stage != "prod"
 
   tags = merge(
