@@ -20,7 +20,7 @@ env:
   STAGE: ${{ inputs.stage || vars.STAGE || 'dev' }}
   db_password: ${{ secrets.DB_PASSWORD }}
   amplify_repository_url: ${{ vars.AMPLIFY_REPOSITORY_URL }}
-  TF_VERSION: '1.6.0'
+  TF_VERSION: '1.13.4'
 
 jobs:
   deploy-infrastructure:
