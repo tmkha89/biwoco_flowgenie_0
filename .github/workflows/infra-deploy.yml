@@ -63,7 +63,8 @@ jobs:
           terraform plan \
             -var="stage=${{ env.STAGE }}" \
             -var="aws_region=${{ env.AWS_REGION }}" \
-            -var="" \
+            -var="db_password=${{ env.db_password }}" \
+            -var="amplify_repository_url=${{ env.amplify_repository_url }}" \
             -out=tfplan
 
       - name: Terraform Apply
