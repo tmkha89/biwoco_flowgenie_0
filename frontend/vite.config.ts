@@ -6,5 +6,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173
-  }
+  },
+  resolve: {
+    extensions: ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json'],
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+  },
 });
