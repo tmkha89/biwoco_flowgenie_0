@@ -2,7 +2,6 @@
 resource "aws_amplify_app" "main" {
   name       = "${var.stage}-flowgenie-frontend"
   repository = var.repository_url
-  branch     = var.branch_name
 
   build_spec = <<-EOT
     version: 1
