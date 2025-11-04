@@ -12,7 +12,7 @@ export class PubSubService implements OnModuleInit {
   private pubsub: PubSub | null = null;
   private readonly projectId: string;
   private readonly publicApiUrl: string;
-  private readonly credentialsPath: string | undefined;
+  private readonly credentialsJson: Record<string, any> | undefined;
 
   constructor(private readonly configService: ConfigService) {
     // Use GOOGLE_PROJECT_NAME first, fallback to GCP_PROJECT_ID for backward compatibility
@@ -24,9 +24,21 @@ export class PubSubService implements OnModuleInit {
       this.configService.get<string>('PUBLIC_API_URL') ||
       this.configService.get<string>('FRONTEND_URL')?.replace('5173', '3000') ||
       'http://localhost:3000';
-    this.credentialsPath = this.configService.get<string>(
+
+    // Parse GOOGLE_APPLICATION_CREDENTIALS as JSON content
+    const credentialsString = this.configService.get<string>(
       'GOOGLE_APPLICATION_CREDENTIALS',
     );
+    if (credentialsString) {
+      try {
+        this.credentialsJson = JSON.parse(credentialsString);
+      } catch (error: any) {
+        this.logger.error(
+          `[PubSub] Failed to parse GOOGLE_APPLICATION_CREDENTIALS as JSON: ${error.message}`,
+        );
+        this.credentialsJson = undefined;
+      }
+    }
   }
 
   /**
@@ -37,7 +49,7 @@ export class PubSubService implements OnModuleInit {
     this.logger.log(`[PubSub] Initializing Pub/Sub service...`);
     this.logger.log(`[PubSub] Project ID: ${this.projectId || 'NOT SET'}`);
     this.logger.log(
-      `[PubSub] Credentials path: ${this.credentialsPath || 'NOT SET'}`,
+      `[PubSub] Credentials: ${this.credentialsJson ? 'SET (JSON content)' : 'NOT SET'}`,
     );
     this.logger.log(`[PubSub] Public API URL: ${this.publicApiUrl}`);
 
@@ -48,14 +60,14 @@ export class PubSubService implements OnModuleInit {
     if (this.projectId) {
       // Only initialize if credentials are explicitly provided
       // Don't try to use default credentials (Application Default Credentials) as it fails locally
-      if (this.credentialsPath) {
+      if (this.credentialsJson) {
         try {
           this.logger.log(
-            `[PubSub] Initializing Pub/Sub client with credentials from: ${this.credentialsPath} for project: ${this.projectId}`,
+            `[PubSub] Initializing Pub/Sub client with JSON credentials for project: ${this.projectId}`,
           );
           this.pubsub = new PubSub({
             projectId: this.projectId,
-            keyFilename: this.credentialsPath,
+            credentials: this.credentialsJson,
           });
           this.logger.log(
             `[PubSub] ✅ Pub/Sub client initialized successfully for project: ${this.projectId}`,
@@ -68,9 +80,10 @@ export class PubSubService implements OnModuleInit {
         }
       } else {
         this.logger.warn(
-          `[PubSub] ⚠️ GOOGLE_APPLICATION_CREDENTIALS not set. Pub/Sub functionality disabled.\n` +
-            `Please set GOOGLE_APPLICATION_CREDENTIALS to the path of your service account JSON key file.\n` +
-            `Example: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`,
+          `[PubSub] ⚠️ GOOGLE_APPLICATION_CREDENTIALS not set or invalid. Pub/Sub functionality disabled.\n` +
+            `Please set GOOGLE_APPLICATION_CREDENTIALS to the JSON content of your service account key.\n` +
+            `Example: GOOGLE_APPLICATION_CREDENTIALS='{"type":"service_account","project_id":"..."}'\n` +
+            `Note: The value should be the JSON content, not a file path.`,
         );
         this.pubsub = null;
       }
