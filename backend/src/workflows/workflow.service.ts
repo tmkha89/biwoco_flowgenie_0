@@ -1,5 +1,9 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { NotFoundException, BadRequestException, WorkflowException } from '../common/exceptions/custom-exceptions';
+import {
+  NotFoundException,
+  BadRequestException,
+  WorkflowException,
+} from '../common/exceptions/custom-exceptions';
 import { WorkflowRepository } from './repositories/workflow.repository';
 import { ExecutionRepository } from './repositories/execution.repository';
 import { WorkflowRelationshipHelper } from './repositories/workflow.relationship.helper';
@@ -34,13 +38,17 @@ export class WorkflowService {
 
   async create(userId: number, createDto: CreateWorkflowDto) {
     this.logger.log(`Creating workflow "${createDto.name}" for user ${userId}`);
-    this.logger.debug(`Workflow DTO: ${JSON.stringify({ name: createDto.name, actionCount: createDto.actions.length, triggerType: createDto.trigger.type })}`);
+    this.logger.debug(
+      `Workflow DTO: ${JSON.stringify({ name: createDto.name, actionCount: createDto.actions.length, triggerType: createDto.trigger.type })}`,
+    );
 
     // Validate that all action types are registered
     for (const action of createDto.actions) {
       const handler = this.actionRegistry.getHandler(action.type);
       if (!handler) {
-        this.logger.error(`Action type "${action.type}" is not registered. Available types: ${this.actionRegistry.getRegisteredTypes().join(', ')}`);
+        this.logger.error(
+          `Action type "${action.type}" is not registered. Available types: ${this.actionRegistry.getRegisteredTypes().join(', ')}`,
+        );
         throw new BadRequestException(
           `Action type "${action.type}" is not registered. Available types: ${this.actionRegistry.getRegisteredTypes().join(', ')}`,
         );
@@ -51,12 +59,20 @@ export class WorkflowService {
 
     // Validate Pub/Sub topic and Gmail watch for Gmail triggers before saving to database
     if (createDto.trigger.type === TriggerType.GOOGLE_MAIL) {
-      await this.validatePubSubTopicForGmailTrigger(userId, createDto.trigger.config);
-      await this.validateGmailWatchForGmailTrigger(userId, createDto.trigger.config);
+      await this.validatePubSubTopicForGmailTrigger(
+        userId,
+        createDto.trigger.config,
+      );
+      await this.validateGmailWatchForGmailTrigger(
+        userId,
+        createDto.trigger.config,
+      );
     }
 
     // Create workflow with trigger and actions
-    this.logger.debug(`Creating workflow in database with ${createDto.actions.length} actions`);
+    this.logger.debug(
+      `Creating workflow in database with ${createDto.actions.length} actions`,
+    );
     const workflow = await this.workflowRepository.create({
       userId,
       name: createDto.name,
@@ -75,26 +91,35 @@ export class WorkflowService {
         order: action.order,
         positionX: action.positionX,
         positionY: action.positionY,
-        retryConfig: action.retryConfig ? {
-          attempts: action.retryConfig.delay > 0 ? 3 : 1,
-          backoff: {
-            type: action.retryConfig.type,
-            delay: action.retryConfig.delay,
-          },
-        } : undefined,
+        retryConfig: action.retryConfig
+          ? {
+              attempts: action.retryConfig.delay > 0 ? 3 : 1,
+              backoff: {
+                type: action.retryConfig.type,
+                delay: action.retryConfig.delay,
+              },
+            }
+          : undefined,
       })),
     });
 
-    this.logger.log(`Workflow created with ID ${workflow.id}, setting up relationships for ${(workflow as any).actions?.length || 0} actions`);
+    this.logger.log(
+      `Workflow created with ID ${workflow.id}, setting up relationships for ${(workflow as any).actions?.length || 0} actions`,
+    );
 
     // Build and set up action relationships
-    const actionRelationships = new Map<number, { nextActionId?: number; parentActionId?: number }>();
-    
+    const actionRelationships = new Map<
+      number,
+      { nextActionId?: number; parentActionId?: number }
+    >();
+
     // Map order indices to actual action IDs
     const orderToActionId = new Map<number, number>();
     (workflow as any).actions.forEach((action: any, index: number) => {
       orderToActionId.set(index, action.id);
-      this.logger.debug(`Mapped action order ${index} -> action ID ${action.id} (${action.type}: ${action.name})`);
+      this.logger.debug(
+        `Mapped action order ${index} -> action ID ${action.id} (${action.type}: ${action.name})`,
+      );
     });
 
     // Process each action to build relationships
@@ -102,25 +127,32 @@ export class WorkflowService {
       const actionId = orderToActionId.get(index);
       if (!actionId) return;
 
-      const relationships: { nextActionId?: number; parentActionId?: number } = {};
+      const relationships: { nextActionId?: number; parentActionId?: number } =
+        {};
 
       // Handle parallel action: set parentActionId for child actions
       if (action.type === 'parallel' && action.config?.actionIds) {
         const childOrderIndices = action.config.actionIds as number[];
-        this.logger.debug(`Processing parallel action ${actionId} with child order indices: [${childOrderIndices.join(', ')}]`);
-        
+        this.logger.debug(
+          `Processing parallel action ${actionId} with child order indices: [${childOrderIndices.join(', ')}]`,
+        );
+
         const childActionIds = childOrderIndices
           .map((orderIdx) => orderToActionId.get(orderIdx))
           .filter((id): id is number => id !== undefined);
-        
-        this.logger.debug(`Parallel action ${actionId} mapped to child action IDs: [${childActionIds.join(', ')}]`);
-        
+
+        this.logger.debug(
+          `Parallel action ${actionId} mapped to child action IDs: [${childActionIds.join(', ')}]`,
+        );
+
         // Set parentActionId for each child action
         childActionIds.forEach((childActionId) => {
           const childRelations = actionRelationships.get(childActionId) || {};
           childRelations.parentActionId = actionId;
           actionRelationships.set(childActionId, childRelations);
-          this.logger.debug(`Set parentActionId=${actionId} for child action ${childActionId}`);
+          this.logger.debug(
+            `Set parentActionId=${actionId} for child action ${childActionId}`,
+          );
         });
       }
 
@@ -132,8 +164,11 @@ export class WorkflowService {
         const loopBodyOrderIdx = action.config.loopActionId as number;
         const loopBodyActionId = orderToActionId.get(loopBodyOrderIdx);
         if (loopBodyActionId) {
-          this.logger.debug(`Loop action ${actionId} has loop body at order ${loopBodyOrderIdx} -> action ID ${loopBodyActionId}`);
-          const loopBodyRelations = actionRelationships.get(loopBodyActionId) || {};
+          this.logger.debug(
+            `Loop action ${actionId} has loop body at order ${loopBodyOrderIdx} -> action ID ${loopBodyActionId}`,
+          );
+          const loopBodyRelations =
+            actionRelationships.get(loopBodyActionId) || {};
           loopBodyRelations.parentActionId = actionId;
           actionRelationships.set(loopBodyActionId, loopBodyRelations);
         }
@@ -145,13 +180,14 @@ export class WorkflowService {
         const nextActionId = orderToActionId.get(nextOrderIdx);
         if (nextActionId) {
           relationships.nextActionId = nextActionId;
-          this.logger.debug(`Sequential flow (from frontend): action ${actionId} -> nextActionId ${nextActionId} (order ${nextOrderIdx})`);
+          this.logger.debug(
+            `Sequential flow (from frontend): action ${actionId} -> nextActionId ${nextActionId} (order ${nextOrderIdx})`,
+          );
         }
       } else {
         // Fallback: infer sequential flow from order (action at index N connects to index N+1)
         // But only if it's not parallel/conditional/loop and has no config overrides
         if (index < createDto.actions.length - 1) {
-          const nextAction = createDto.actions[index + 1];
           // Only set nextActionId if next action doesn't have a parent already
           // and current action isn't special type
           if (
@@ -167,7 +203,9 @@ export class WorkflowService {
             const nextActionId = orderToActionId.get(index + 1);
             if (nextActionId) {
               relationships.nextActionId = nextActionId;
-              this.logger.debug(`Sequential flow (inferred): action ${actionId} -> nextActionId ${nextActionId}`);
+              this.logger.debug(
+                `Sequential flow (inferred): action ${actionId} -> nextActionId ${nextActionId}`,
+              );
             }
           }
         }
@@ -179,13 +217,17 @@ export class WorkflowService {
         const parentActionId = orderToActionId.get(parentOrderIdx);
         if (parentActionId) {
           relationships.parentActionId = parentActionId;
-          this.logger.debug(`Parent-child (from frontend): action ${actionId} -> parentActionId ${parentActionId} (order ${parentOrderIdx})`);
+          this.logger.debug(
+            `Parent-child (from frontend): action ${actionId} -> parentActionId ${parentActionId} (order ${parentOrderIdx})`,
+          );
         }
       }
 
       if (Object.keys(relationships).length > 0) {
         actionRelationships.set(actionId, relationships);
-        this.logger.debug(`Relationships for action ${actionId}: ${JSON.stringify(relationships)}`);
+        this.logger.debug(
+          `Relationships for action ${actionId}: ${JSON.stringify(relationships)}`,
+        );
       }
     });
 
@@ -201,9 +243,11 @@ export class WorkflowService {
           const childActionIds = childOrderIndices
             .map((orderIdx) => orderToActionId.get(orderIdx))
             .filter((id): id is number => id !== undefined);
-          
-          this.logger.log(`Updating parallel action ${actionId} config: replacing order indices [${childOrderIndices.join(', ')}] with action IDs [${childActionIds.join(', ')}]`);
-          
+
+          this.logger.log(
+            `Updating parallel action ${actionId} config: replacing order indices [${childOrderIndices.join(', ')}] with action IDs [${childActionIds.join(', ')}]`,
+          );
+
           // Update parallel action config with real action IDs (not order indices)
           await this.prisma.action.update({
             where: { id: actionId },
@@ -214,16 +258,23 @@ export class WorkflowService {
               },
             },
           });
-          
-          this.logger.debug(`Parallel action ${actionId} config updated successfully`);
+
+          this.logger.debug(
+            `Parallel action ${actionId} config updated successfully`,
+          );
         }
       }
     }
 
     // Update action relationships in database
     if (actionRelationships.size > 0) {
-      this.logger.log(`Updating ${actionRelationships.size} action relationships in database`);
-      await this.relationshipHelper.updateActionRelationships(workflow.id, actionRelationships);
+      this.logger.log(
+        `Updating ${actionRelationships.size} action relationships in database`,
+      );
+      await this.relationshipHelper.updateActionRelationships(
+        workflow.id,
+        actionRelationships,
+      );
       this.logger.debug(`Action relationships updated successfully`);
     } else {
       this.logger.warn(`No action relationships to update`);
@@ -231,17 +282,27 @@ export class WorkflowService {
 
     // Reload workflow with relationships
     this.logger.debug(`Reloading workflow ${workflow.id} with relationships`);
-    const workflowWithRelations = await this.workflowRepository.findById(workflow.id);
+    const workflowWithRelations = await this.workflowRepository.findById(
+      workflow.id,
+    );
     if (!workflowWithRelations) {
-      this.logger.error(`Failed to reload workflow ${workflow.id} after creating relationships`);
-      throw new WorkflowException('Failed to reload workflow after creating relationships');
+      this.logger.error(
+        `Failed to reload workflow ${workflow.id} after creating relationships`,
+      );
+      throw new WorkflowException(
+        'Failed to reload workflow after creating relationships',
+      );
     }
 
-    this.logger.debug(`Workflow reloaded: ${(workflowWithRelations as any).actions?.length || 0} actions with relationships`);
+    this.logger.debug(
+      `Workflow reloaded: ${(workflowWithRelations as any).actions?.length || 0} actions with relationships`,
+    );
 
     // Register trigger if workflow is enabled
     if (workflow.enabled) {
-      this.logger.log(`Registering trigger for workflow ${workflow.id} (type: ${createDto.trigger.type})`);
+      this.logger.log(
+        `Registering trigger for workflow ${workflow.id} (type: ${createDto.trigger.type})`,
+      );
       await this.triggerRegistry.register(
         workflow.id,
         createDto.trigger.type,
@@ -249,24 +310,42 @@ export class WorkflowService {
       );
       this.logger.debug(`Trigger registered successfully`);
     } else {
-      this.logger.debug(`Workflow ${workflow.id} is disabled, skipping trigger registration`);
+      this.logger.debug(
+        `Workflow ${workflow.id} is disabled, skipping trigger registration`,
+      );
     }
 
     // Create Pub/Sub subscription for Gmail triggers after saving workflow
-    if (createDto.trigger.type === TriggerType.GOOGLE_MAIL && this.pubSubService.isAvailable()) {
+    if (
+      createDto.trigger.type === TriggerType.GOOGLE_MAIL &&
+      this.pubSubService.isAvailable()
+    ) {
       try {
-        this.logger.log(`[WorkflowService] Creating Pub/Sub subscription for user ${userId}`);
+        this.logger.log(
+          `[WorkflowService] Creating Pub/Sub subscription for user ${userId}`,
+        );
         const topicPath = this.pubSubService.getTopicPath(userId);
-        const subscriptionPath = await this.pubSubService.createSubscription(userId, topicPath);
-        this.logger.log(`[WorkflowService] ✅ Pub/Sub subscription created successfully: ${subscriptionPath}`);
+        const subscriptionPath = await this.pubSubService.createSubscription(
+          userId,
+          topicPath,
+        );
+        this.logger.log(
+          `[WorkflowService] ✅ Pub/Sub subscription created successfully: ${subscriptionPath}`,
+        );
       } catch (error: any) {
         // Log error but don't fail workflow creation - subscription can be created later
-        this.logger.error(`[WorkflowService] Failed to create Pub/Sub subscription for user ${userId}: ${error.message}`);
-        this.logger.warn(`[WorkflowService] Workflow saved but subscription creation failed. Subscription may need to be created manually.`);
+        this.logger.error(
+          `[WorkflowService] Failed to create Pub/Sub subscription for user ${userId}: ${error.message}`,
+        );
+        this.logger.warn(
+          `[WorkflowService] Workflow saved but subscription creation failed. Subscription may need to be created manually.`,
+        );
       }
     }
 
-    this.logger.log(`Workflow "${createDto.name}" created successfully with ID ${workflowWithRelations.id}`);
+    this.logger.log(
+      `Workflow "${createDto.name}" created successfully with ID ${workflowWithRelations.id}`,
+    );
     return workflowWithRelations;
   }
 
@@ -274,24 +353,33 @@ export class WorkflowService {
    * Validate Pub/Sub topic creation for Gmail triggers
    * Ensures topic can be created before saving workflow to database
    */
-  private async validatePubSubTopicForGmailTrigger(userId: number, config: any): Promise<void> {
+  private async validatePubSubTopicForGmailTrigger(
+    userId: number,
+    _config: any,
+  ): Promise<void> {
     if (!this.pubSubService.isAvailable()) {
       throw new BadRequestException(
-        'Pub/Sub service is not available. Please set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS environment variables.'
+        'Pub/Sub service is not available. Please set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS environment variables.',
       );
     }
 
     try {
-      this.logger.log(`[WorkflowService] Validating Pub/Sub topic creation for user ${userId}`);
-      
+      this.logger.log(
+        `[WorkflowService] Validating Pub/Sub topic creation for user ${userId}`,
+      );
+
       // Attempt to create or verify topic exists
       const topicPath = await this.pubSubService.createTopic(userId);
-      
-      this.logger.log(`[WorkflowService] ✅ Pub/Sub topic validated successfully: ${topicPath}`);
+
+      this.logger.log(
+        `[WorkflowService] ✅ Pub/Sub topic validated successfully: ${topicPath}`,
+      );
     } catch (error: any) {
-      this.logger.error(`[WorkflowService] Failed to validate Pub/Sub topic for user ${userId}: ${error.message}`);
+      this.logger.error(
+        `[WorkflowService] Failed to validate Pub/Sub topic for user ${userId}: ${error.message}`,
+      );
       throw new BadRequestException(
-        `Failed to validate Pub/Sub topic: ${error.message}. Please ensure Google Cloud Pub/Sub is properly configured.`
+        `Failed to validate Pub/Sub topic: ${error.message}. Please ensure Google Cloud Pub/Sub is properly configured.`,
       );
     }
   }
@@ -300,10 +388,15 @@ export class WorkflowService {
    * Validate Gmail watch creation for Gmail triggers
    * Ensures OAuth tokens are valid and Gmail API is accessible before saving workflow to database
    */
-  private async validateGmailWatchForGmailTrigger(userId: number, config: any): Promise<void> {
+  private async validateGmailWatchForGmailTrigger(
+    userId: number,
+    _config: any,
+  ): Promise<void> {
     try {
-      this.logger.log(`[WorkflowService] Validating Gmail watch creation for user ${userId}`);
-      
+      this.logger.log(
+        `[WorkflowService] Validating Gmail watch creation for user ${userId}`,
+      );
+
       // Check if OAuth account exists
       const oauthAccount = await this.prisma.oAuthAccount.findFirst({
         where: {
@@ -314,13 +407,13 @@ export class WorkflowService {
 
       if (!oauthAccount || !oauthAccount.accessToken) {
         throw new BadRequestException(
-          'Google OAuth account not found. Please connect your Google account before creating a Gmail trigger workflow.'
+          'Google OAuth account not found. Please connect your Google account before creating a Gmail trigger workflow.',
         );
       }
 
       if (!oauthAccount.refreshToken) {
         throw new BadRequestException(
-          'Google refresh token not found. Please re-authenticate with Google to get a refresh token.'
+          'Google refresh token not found. Please re-authenticate with Google to get a refresh token.',
         );
       }
 
@@ -328,36 +421,47 @@ export class WorkflowService {
       let accessToken = oauthAccount.accessToken;
       const now = new Date();
       const expiresAt = oauthAccount.expiresAt;
-      
+
       // Check if token is expired or expires within the next 5 minutes
-      const needsRefresh = !expiresAt || expiresAt <= new Date(now.getTime() + 5 * 60 * 1000);
-      
+      const needsRefresh =
+        !expiresAt || expiresAt <= new Date(now.getTime() + 5 * 60 * 1000);
+
       if (needsRefresh) {
-        this.logger.log(`[WorkflowService] Access token expired or expiring soon, refreshing...`);
-        
+        this.logger.log(
+          `[WorkflowService] Access token expired or expiring soon, refreshing...`,
+        );
+
         try {
-          const refreshedTokens = await this.googleOAuthService.refreshAccessToken(oauthAccount.refreshToken);
+          const refreshedTokens =
+            await this.googleOAuthService.refreshAccessToken(
+              oauthAccount.refreshToken,
+            );
           accessToken = refreshedTokens.access_token;
-          
+
           // Update OAuth account with new token
-          const newExpiresAt = refreshedTokens.expires_in 
+          const newExpiresAt = refreshedTokens.expires_in
             ? new Date(Date.now() + refreshedTokens.expires_in * 1000)
             : expiresAt;
-          
+
           await this.prisma.oAuthAccount.update({
             where: { id: oauthAccount.id },
             data: {
               accessToken: refreshedTokens.access_token,
               expiresAt: newExpiresAt,
-              refreshToken: refreshedTokens.refresh_token || oauthAccount.refreshToken,
+              refreshToken:
+                refreshedTokens.refresh_token || oauthAccount.refreshToken,
             },
           });
-          
-          this.logger.log(`[WorkflowService] ✅ Access token refreshed successfully`);
+
+          this.logger.log(
+            `[WorkflowService] ✅ Access token refreshed successfully`,
+          );
         } catch (refreshError: any) {
-          this.logger.error(`[WorkflowService] Failed to refresh access token: ${refreshError.message}`);
+          this.logger.error(
+            `[WorkflowService] Failed to refresh access token: ${refreshError.message}`,
+          );
           throw new BadRequestException(
-            `Failed to refresh access token: ${refreshError.message}. Please re-authenticate with Google.`
+            `Failed to refresh access token: ${refreshError.message}. Please re-authenticate with Google.`,
           );
         }
       }
@@ -365,7 +469,7 @@ export class WorkflowService {
       // Validate that Pub/Sub topic exists (required for watch)
       if (!this.pubSubService.isAvailable()) {
         throw new BadRequestException(
-          'Pub/Sub service is not available. Gmail watch requires Pub/Sub topic to be configured.'
+          'Pub/Sub service is not available. Gmail watch requires Pub/Sub topic to be configured.',
         );
       }
 
@@ -375,40 +479,52 @@ export class WorkflowService {
       // Test Gmail API access with a simple profile call
       // This validates that the token has the necessary Gmail scopes
       try {
-        const response = await axios.get('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
+        const response = await axios.get(
+          'https://gmail.googleapis.com/gmail/v1/users/me/profile',
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
           },
-        });
-        
-        this.logger.log(`[WorkflowService] ✅ Gmail API access validated successfully (email: ${response.data.emailAddress})`);
+        );
+
+        this.logger.log(
+          `[WorkflowService] ✅ Gmail API access validated successfully (email: ${response.data.emailAddress})`,
+        );
       } catch (apiError: any) {
-        const errorMessage = apiError.response?.data?.error?.message || apiError.message;
-        this.logger.error(`[WorkflowService] Failed to validate Gmail API access: ${errorMessage}`);
-        
+        const errorMessage =
+          apiError.response?.data?.error?.message || apiError.message;
+        this.logger.error(
+          `[WorkflowService] Failed to validate Gmail API access: ${errorMessage}`,
+        );
+
         if (apiError.response?.status === 401) {
           throw new BadRequestException(
-            'Invalid Gmail access token. Please re-authenticate with Google and ensure Gmail API scopes are granted.'
+            'Invalid Gmail access token. Please re-authenticate with Google and ensure Gmail API scopes are granted.',
           );
         } else if (apiError.response?.status === 403) {
           throw new BadRequestException(
-            'Gmail API access denied. Please ensure Gmail API is enabled and the necessary scopes are granted.'
+            'Gmail API access denied. Please ensure Gmail API is enabled and the necessary scopes are granted.',
           );
         } else {
           throw new BadRequestException(
-            `Failed to validate Gmail API access: ${errorMessage}. Please ensure Gmail API is properly configured.`
+            `Failed to validate Gmail API access: ${errorMessage}. Please ensure Gmail API is properly configured.`,
           );
         }
       }
 
-      this.logger.log(`[WorkflowService] ✅ Gmail watch validation completed successfully`);
+      this.logger.log(
+        `[WorkflowService] ✅ Gmail watch validation completed successfully`,
+      );
     } catch (error: any) {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      this.logger.error(`[WorkflowService] Failed to validate Gmail watch for user ${userId}: ${error.message}`);
+      this.logger.error(
+        `[WorkflowService] Failed to validate Gmail watch for user ${userId}: ${error.message}`,
+      );
       throw new BadRequestException(
-        `Failed to validate Gmail watch: ${error.message}. Please ensure Google OAuth and Gmail API are properly configured.`
+        `Failed to validate Gmail watch: ${error.message}. Please ensure Google OAuth and Gmail API are properly configured.`,
       );
     }
   }
@@ -423,37 +539,54 @@ export class WorkflowService {
     }
 
     if (workflow.userId !== userId) {
-      this.logger.warn(`User ${userId} attempted to access workflow ${id} owned by user ${workflow.userId}`);
+      this.logger.warn(
+        `User ${userId} attempted to access workflow ${id} owned by user ${workflow.userId}`,
+      );
       throw new NotFoundException('Workflow', id);
     }
 
-    this.logger.debug(`Workflow ${id} found with ${(workflow as any).actions?.length || 0} actions`);
+    this.logger.debug(
+      `Workflow ${id} found with ${(workflow as any).actions?.length || 0} actions`,
+    );
     return workflow;
   }
 
   async findByUserId(userId: number, options?: { enabled?: boolean }) {
-    this.logger.debug(`Finding workflows for user ${userId}${options?.enabled !== undefined ? ` (enabled: ${options.enabled})` : ''}`);
-    const workflows = await this.workflowRepository.findByUserId(userId, options);
+    this.logger.debug(
+      `Finding workflows for user ${userId}${options?.enabled !== undefined ? ` (enabled: ${options.enabled})` : ''}`,
+    );
+    const workflows = await this.workflowRepository.findByUserId(
+      userId,
+      options,
+    );
     this.logger.debug(`Found ${workflows.length} workflows for user ${userId}`);
     return workflows;
   }
 
   async update(id: number, userId: number, data: UpdateWorkflowDto) {
     this.logger.log(`Updating workflow ${id} for user ${userId}`);
-    this.logger.debug(`Update data: ${JSON.stringify({ ...data, actions: data.actions ? `${data.actions.length} actions` : undefined })}`);
-    
+    this.logger.debug(
+      `Update data: ${JSON.stringify({ ...data, actions: data.actions ? `${data.actions.length} actions` : undefined })}`,
+    );
+
     const workflow = await this.findById(id, userId);
 
     // Update trigger if provided
     if (data.trigger) {
       this.logger.log(`Updating trigger for workflow ${id}`);
-      
+
       // Validate Pub/Sub topic and Gmail watch for Gmail triggers before updating database
       if (data.trigger.type === TriggerType.GOOGLE_MAIL) {
-        await this.validatePubSubTopicForGmailTrigger(userId, data.trigger.config);
-        await this.validateGmailWatchForGmailTrigger(userId, data.trigger.config);
+        await this.validatePubSubTopicForGmailTrigger(
+          userId,
+          data.trigger.config,
+        );
+        await this.validateGmailWatchForGmailTrigger(
+          userId,
+          data.trigger.config,
+        );
       }
-      
+
       await this.prisma.trigger.update({
         where: { workflowId: id },
         data: {
@@ -468,8 +601,10 @@ export class WorkflowService {
 
     // Update actions if provided
     if (data.actions && data.actions.length > 0) {
-      this.logger.log(`Updating ${data.actions.length} actions for workflow ${id}`);
-      
+      this.logger.log(
+        `Updating ${data.actions.length} actions for workflow ${id}`,
+      );
+
       // Validate all action types
       for (const action of data.actions) {
         const handler = this.actionRegistry.getHandler(action.type);
@@ -488,7 +623,9 @@ export class WorkflowService {
       });
 
       // Create new actions
-      this.logger.debug(`Creating ${data.actions.length} new actions for workflow ${id}`);
+      this.logger.debug(
+        `Creating ${data.actions.length} new actions for workflow ${id}`,
+      );
       const createdActions = await Promise.all(
         data.actions.map((action) =>
           this.prisma.action.create({
@@ -514,16 +651,23 @@ export class WorkflowService {
         ),
       );
 
-      this.logger.log(`Created ${createdActions.length} actions, setting up relationships`);
+      this.logger.log(
+        `Created ${createdActions.length} actions, setting up relationships`,
+      );
 
       // Build and set up action relationships (same logic as create)
-      const actionRelationships = new Map<number, { nextActionId?: number; parentActionId?: number }>();
-      
+      const actionRelationships = new Map<
+        number,
+        { nextActionId?: number; parentActionId?: number }
+      >();
+
       // Map order indices to actual action IDs
       const orderToActionId = new Map<number, number>();
       createdActions.forEach((action, index) => {
         orderToActionId.set(index, action.id);
-        this.logger.debug(`Mapped action order ${index} -> action ID ${action.id} (${action.type}: ${action.name})`);
+        this.logger.debug(
+          `Mapped action order ${index} -> action ID ${action.id} (${action.type}: ${action.name})`,
+        );
       });
 
       // Process each action to build relationships
@@ -531,34 +675,49 @@ export class WorkflowService {
         const actionId = orderToActionId.get(index);
         if (!actionId) return;
 
-        const relationships: { nextActionId?: number; parentActionId?: number } = {};
+        const relationships: {
+          nextActionId?: number;
+          parentActionId?: number;
+        } = {};
 
         // Handle parallel action: set parentActionId for child actions
         if (action.type === 'parallel' && action.config?.actionIds) {
           const childOrderIndices = action.config.actionIds as number[];
-          this.logger.debug(`Processing parallel action ${actionId} with child order indices: [${childOrderIndices.join(', ')}]`);
-          
+          this.logger.debug(
+            `Processing parallel action ${actionId} with child order indices: [${childOrderIndices.join(', ')}]`,
+          );
+
           const childActionIds = childOrderIndices
             .map((orderIdx) => orderToActionId.get(orderIdx))
             .filter((id): id is number => id !== undefined);
-          
-          this.logger.debug(`Parallel action ${actionId} mapped to child action IDs: [${childActionIds.join(', ')}]`);
-          
+
+          this.logger.debug(
+            `Parallel action ${actionId} mapped to child action IDs: [${childActionIds.join(', ')}]`,
+          );
+
           childActionIds.forEach((childActionId) => {
             const childRelations = actionRelationships.get(childActionId) || {};
             childRelations.parentActionId = actionId;
             actionRelationships.set(childActionId, childRelations);
-            this.logger.debug(`Set parentActionId=${actionId} for child action ${childActionId}`);
+            this.logger.debug(
+              `Set parentActionId=${actionId} for child action ${childActionId}`,
+            );
           });
         }
 
         // Handle loop action: set parentActionId for loop body action
-        if (action.type === 'loop' && action.config?.loopActionId !== undefined) {
+        if (
+          action.type === 'loop' &&
+          action.config?.loopActionId !== undefined
+        ) {
           const loopBodyOrderIdx = action.config.loopActionId as number;
           const loopBodyActionId = orderToActionId.get(loopBodyOrderIdx);
           if (loopBodyActionId) {
-            this.logger.debug(`Loop action ${actionId} has loop body at order ${loopBodyOrderIdx} -> action ID ${loopBodyActionId}`);
-            const loopBodyRelations = actionRelationships.get(loopBodyActionId) || {};
+            this.logger.debug(
+              `Loop action ${actionId} has loop body at order ${loopBodyOrderIdx} -> action ID ${loopBodyActionId}`,
+            );
+            const loopBodyRelations =
+              actionRelationships.get(loopBodyActionId) || {};
             loopBodyRelations.parentActionId = actionId;
             actionRelationships.set(loopBodyActionId, loopBodyRelations);
           }
@@ -570,12 +729,13 @@ export class WorkflowService {
           const nextActionId = orderToActionId.get(nextOrderIdx);
           if (nextActionId) {
             relationships.nextActionId = nextActionId;
-            this.logger.debug(`Sequential flow (from frontend): action ${actionId} -> nextActionId ${nextActionId} (order ${nextOrderIdx})`);
+            this.logger.debug(
+              `Sequential flow (from frontend): action ${actionId} -> nextActionId ${nextActionId} (order ${nextOrderIdx})`,
+            );
           }
         } else {
           // Fallback: infer sequential flow from order
           if (index < data.actions.length - 1) {
-            const nextAction = data.actions[index + 1];
             if (
               action.type !== 'parallel' &&
               action.type !== 'conditional' &&
@@ -589,7 +749,9 @@ export class WorkflowService {
               const nextActionId = orderToActionId.get(index + 1);
               if (nextActionId) {
                 relationships.nextActionId = nextActionId;
-                this.logger.debug(`Sequential flow (inferred): action ${actionId} -> nextActionId ${nextActionId}`);
+                this.logger.debug(
+                  `Sequential flow (inferred): action ${actionId} -> nextActionId ${nextActionId}`,
+                );
               }
             }
           }
@@ -601,13 +763,17 @@ export class WorkflowService {
           const parentActionId = orderToActionId.get(parentOrderIdx);
           if (parentActionId) {
             relationships.parentActionId = parentActionId;
-            this.logger.debug(`Parent-child (from frontend): action ${actionId} -> parentActionId ${parentActionId} (order ${parentOrderIdx})`);
+            this.logger.debug(
+              `Parent-child (from frontend): action ${actionId} -> parentActionId ${parentActionId} (order ${parentOrderIdx})`,
+            );
           }
         }
 
         if (Object.keys(relationships).length > 0) {
           actionRelationships.set(actionId, relationships);
-          this.logger.debug(`Relationships for action ${actionId}: ${JSON.stringify(relationships)}`);
+          this.logger.debug(
+            `Relationships for action ${actionId}: ${JSON.stringify(relationships)}`,
+          );
         }
       });
 
@@ -623,9 +789,11 @@ export class WorkflowService {
             const childActionIds = childOrderIndices
               .map((orderIdx) => orderToActionId.get(orderIdx))
               .filter((id): id is number => id !== undefined);
-            
-            this.logger.log(`Updating parallel action ${actionId} config: replacing order indices [${childOrderIndices.join(', ')}] with action IDs [${childActionIds.join(', ')}]`);
-            
+
+            this.logger.log(
+              `Updating parallel action ${actionId} config: replacing order indices [${childOrderIndices.join(', ')}] with action IDs [${childActionIds.join(', ')}]`,
+            );
+
             await this.prisma.action.update({
               where: { id: actionId },
               data: {
@@ -635,24 +803,36 @@ export class WorkflowService {
                 },
               },
             });
-            
-            this.logger.debug(`Parallel action ${actionId} config updated successfully`);
+
+            this.logger.debug(
+              `Parallel action ${actionId} config updated successfully`,
+            );
           }
         }
       }
 
       // Update action relationships in database
       if (actionRelationships.size > 0) {
-        this.logger.log(`Updating ${actionRelationships.size} action relationships in database`);
-        await this.relationshipHelper.updateActionRelationships(id, actionRelationships);
+        this.logger.log(
+          `Updating ${actionRelationships.size} action relationships in database`,
+        );
+        await this.relationshipHelper.updateActionRelationships(
+          id,
+          actionRelationships,
+        );
         this.logger.debug(`Action relationships updated successfully`);
       }
     }
 
     // Update basic workflow properties
-    const updateData: { name?: string; description?: string; enabled?: boolean } = {};
+    const updateData: {
+      name?: string;
+      description?: string;
+      enabled?: boolean;
+    } = {};
     if (data.name !== undefined) updateData.name = data.name;
-    if (data.description !== undefined) updateData.description = data.description;
+    if (data.description !== undefined)
+      updateData.description = data.description;
     if (data.enabled !== undefined) updateData.enabled = data.enabled;
 
     if (Object.keys(updateData).length > 0) {
@@ -670,12 +850,15 @@ export class WorkflowService {
 
     // If enabled status changed, register/unregister trigger
     const wasEnabled = workflow.enabled;
-    const isEnabled = data.enabled !== undefined ? data.enabled : workflow.enabled;
+    const isEnabled =
+      data.enabled !== undefined ? data.enabled : workflow.enabled;
     const trigger = (updated as any).trigger;
 
     if (data.enabled !== undefined && isEnabled !== wasEnabled) {
       if (isEnabled && trigger) {
-        this.logger.log(`Workflow ${id} enabled, registering trigger (type: ${trigger.type})`);
+        this.logger.log(
+          `Workflow ${id} enabled, registering trigger (type: ${trigger.type})`,
+        );
         await this.triggerRegistry.register(
           updated.id,
           trigger.type as any,
@@ -689,22 +872,42 @@ export class WorkflowService {
       }
     } else if (data.trigger && workflow.enabled) {
       // If trigger was updated and workflow is enabled, re-register it
-      this.logger.log(`Re-registering trigger for workflow ${id} (type: ${data.trigger.type})`);
+      this.logger.log(
+        `Re-registering trigger for workflow ${id} (type: ${data.trigger.type})`,
+      );
       await this.triggerRegistry.unregister(updated.id);
-      await this.triggerRegistry.register(updated.id, data.trigger.type, data.trigger.config);
+      await this.triggerRegistry.register(
+        updated.id,
+        data.trigger.type,
+        data.trigger.config,
+      );
       this.logger.debug(`Trigger re-registered for workflow ${id}`);
 
       // Create Pub/Sub subscription for Gmail triggers after updating trigger
-      if (data.trigger.type === TriggerType.GOOGLE_MAIL && this.pubSubService.isAvailable()) {
+      if (
+        data.trigger.type === TriggerType.GOOGLE_MAIL &&
+        this.pubSubService.isAvailable()
+      ) {
         try {
-          this.logger.log(`[WorkflowService] Creating Pub/Sub subscription for user ${userId}`);
+          this.logger.log(
+            `[WorkflowService] Creating Pub/Sub subscription for user ${userId}`,
+          );
           const topicPath = this.pubSubService.getTopicPath(userId);
-          const subscriptionPath = await this.pubSubService.createSubscription(userId, topicPath);
-          this.logger.log(`[WorkflowService] ✅ Pub/Sub subscription created successfully: ${subscriptionPath}`);
+          const subscriptionPath = await this.pubSubService.createSubscription(
+            userId,
+            topicPath,
+          );
+          this.logger.log(
+            `[WorkflowService] ✅ Pub/Sub subscription created successfully: ${subscriptionPath}`,
+          );
         } catch (error: any) {
           // Log error but don't fail workflow update - subscription can be created later
-          this.logger.error(`[WorkflowService] Failed to create Pub/Sub subscription for user ${userId}: ${error.message}`);
-          this.logger.warn(`[WorkflowService] Workflow updated but subscription creation failed. Subscription may need to be created manually.`);
+          this.logger.error(
+            `[WorkflowService] Failed to create Pub/Sub subscription for user ${userId}: ${error.message}`,
+          );
+          this.logger.warn(
+            `[WorkflowService] Workflow updated but subscription creation failed. Subscription may need to be created manually.`,
+          );
         }
       }
     }
@@ -724,14 +927,18 @@ export class WorkflowService {
     // Delete workflow
     this.logger.debug(`Deleting workflow ${id} from database`);
     await this.workflowRepository.delete(id);
-    
+
     this.logger.log(`Workflow ${id} deleted successfully`);
   }
 
-  async trigger(workflowId: number, userId: number, triggerData?: Record<string, any>) {
+  async trigger(
+    workflowId: number,
+    userId: number,
+    triggerData?: Record<string, any>,
+  ) {
     this.logger.log(`Triggering workflow ${workflowId} for user ${userId}`);
     this.logger.debug(`Trigger data: ${JSON.stringify(triggerData || {})}`);
-    
+
     const workflow = await this.workflowRepository.findById(workflowId);
 
     if (!workflow) {
@@ -741,7 +948,9 @@ export class WorkflowService {
 
     if (!workflow.enabled) {
       this.logger.warn(`Attempted to trigger disabled workflow ${workflowId}`);
-      throw new WorkflowException(`Workflow ${workflowId} is disabled and cannot be executed`);
+      throw new WorkflowException(
+        `Workflow ${workflowId} is disabled and cannot be executed`,
+      );
     }
 
     this.logger.debug(`Creating execution for workflow ${workflowId}`);
@@ -753,7 +962,9 @@ export class WorkflowService {
       triggerData: triggerData || {},
     });
 
-    this.logger.log(`Execution ${execution.id} created for workflow ${workflowId}, queuing for processing`);
+    this.logger.log(
+      `Execution ${execution.id} created for workflow ${workflowId}, queuing for processing`,
+    );
 
     // Queue execution for processing
     await this.workflowQueue.add(
@@ -777,4 +988,3 @@ export class WorkflowService {
     return execution;
   }
 }
-

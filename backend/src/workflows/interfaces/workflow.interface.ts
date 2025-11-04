@@ -178,4 +178,3 @@ export interface ITriggerHandler {
    */
   unregister(workflowId: number): Promise<void>;
 }
-

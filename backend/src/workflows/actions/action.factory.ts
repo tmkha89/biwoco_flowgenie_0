@@ -35,4 +35,3 @@ export class ActionFactory {
     return this.actionRegistry.getRegisteredTypes();
   }
 }
-

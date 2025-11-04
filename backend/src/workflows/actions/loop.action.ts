@@ -13,8 +13,16 @@ export class LoopActionHandler extends BaseActionHandler {
   readonly type = 'loop';
   readonly name = 'Loop';
 
-  async execute(context: ExecutionContext, config: Record<string, any>): Promise<any> {
-    const { items, itemVariable = 'item', loopActionId, maxIterations = 1000 } = config;
+  async execute(
+    context: ExecutionContext,
+    config: Record<string, any>,
+  ): Promise<any> {
+    const {
+      items,
+      itemVariable = 'item',
+      loopActionId,
+      maxIterations = 1000,
+    } = config;
 
     if (!items && !config.itemsPath) {
       throw new Error('Loop action requires items or itemsPath');
@@ -25,14 +33,19 @@ export class LoopActionHandler extends BaseActionHandler {
     if (items) {
       loopItems = Array.isArray(items) ? items : [items];
     } else if (config.itemsPath) {
-      const resolvedPath = this.resolveTemplate(String(config.itemsPath), context);
+      const resolvedPath = this.resolveTemplate(
+        String(config.itemsPath),
+        context,
+      );
       const itemsValue = this.getNestedValue(context, resolvedPath);
       loopItems = Array.isArray(itemsValue) ? itemsValue : [itemsValue];
     }
 
     // Validate max iterations
     if (loopItems.length > maxIterations) {
-      throw new Error(`Loop has ${loopItems.length} items, exceeds maximum of ${maxIterations}`);
+      throw new Error(
+        `Loop has ${loopItems.length} items, exceeds maximum of ${maxIterations}`,
+      );
     }
 
     // Return metadata for the execution service to handle
@@ -91,4 +104,3 @@ export class LoopActionHandler extends BaseActionHandler {
     });
   }
 }
-

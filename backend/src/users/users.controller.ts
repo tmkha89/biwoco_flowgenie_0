@@ -33,4 +33,3 @@ export class UsersController {
     return this.usersService.findById(user.id);
   }
 }
-

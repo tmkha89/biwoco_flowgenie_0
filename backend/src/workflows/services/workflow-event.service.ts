@@ -16,7 +16,9 @@ export class WorkflowEventService {
    * This event will be picked up by the workflow engine to start execution
    */
   emitWorkflowTrigger(workflowId: number, payload: Record<string, any>): void {
-    this.logger.log(`Emitting workflow trigger event for workflow ${workflowId}`);
+    this.logger.log(
+      `Emitting workflow trigger event for workflow ${workflowId}`,
+    );
     this.logger.debug(`Trigger payload: ${JSON.stringify(payload)}`);
 
     this.eventEmitter.emit('workflow.trigger', {
@@ -25,4 +27,3 @@ export class WorkflowEventService {
     });
   }
 }
-

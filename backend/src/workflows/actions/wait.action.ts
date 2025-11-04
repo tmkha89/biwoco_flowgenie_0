@@ -11,7 +11,10 @@ export class WaitActionHandler extends BaseActionHandler {
   readonly type = 'wait';
   readonly name = 'Wait/Delay';
 
-  async execute(context: ExecutionContext, config: Record<string, any>): Promise<any> {
+  async execute(
+    context: ExecutionContext,
+    config: Record<string, any>,
+  ): Promise<any> {
     const { duration, condition, maxWaitTime = 60000 } = config;
 
     if (duration) {
@@ -69,7 +72,9 @@ export class WaitActionHandler extends BaseActionHandler {
 
     const match = duration.match(/^(\d+)(s|m|h|ms)$/);
     if (!match) {
-      throw new Error(`Invalid duration format: ${duration}. Use format like "5s", "10m", "2h", or milliseconds`);
+      throw new Error(
+        `Invalid duration format: ${duration}. Use format like "5s", "10m", "2h", or milliseconds`,
+      );
     }
 
     const value = parseInt(match[1], 10);
@@ -93,7 +98,10 @@ export class WaitActionHandler extends BaseActionHandler {
    * Evaluate a condition expression
    * Supports: field == value, field != value, field > value, etc.
    */
-  private evaluateCondition(condition: string, context: ExecutionContext): boolean {
+  private evaluateCondition(
+    condition: string,
+    context: ExecutionContext,
+  ): boolean {
     // Simple condition evaluation
     // Format: "{{step.1.output.status}} == 'success'"
     const resolvedCondition = this.resolveTemplate(condition, context);
@@ -120,7 +128,11 @@ export class WaitActionHandler extends BaseActionHandler {
   /**
    * Compare two values
    */
-  private compareValues(left: string, right: string, operator: string): boolean {
+  private compareValues(
+    left: string,
+    right: string,
+    operator: string,
+  ): boolean {
     // Remove quotes
     const leftVal = this.parseValue(left);
     const rightVal = this.parseValue(right);
@@ -144,7 +156,10 @@ export class WaitActionHandler extends BaseActionHandler {
    */
   private parseValue(value: string): any {
     value = value.trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
       return value.slice(1, -1);
     }
     if (value === 'true') return true;
@@ -183,4 +198,3 @@ export class WaitActionHandler extends BaseActionHandler {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
-

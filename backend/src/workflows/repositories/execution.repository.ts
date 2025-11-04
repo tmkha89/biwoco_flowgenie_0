@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '@prisma/client';
-import { WorkflowStatus, ExecutionStepStatus } from '../interfaces/workflow.interface';
+import {
+  WorkflowStatus,
+  ExecutionStepStatus,
+} from '../interfaces/workflow.interface';
 
 @Injectable()
 export class ExecutionRepository {
@@ -80,10 +83,13 @@ export class ExecutionRepository {
     });
   }
 
-  async findByWorkflowId(workflowId: number, options?: {
-    limit?: number;
-    offset?: number;
-  }) {
+  async findByWorkflowId(
+    workflowId: number,
+    options?: {
+      limit?: number;
+      offset?: number;
+    },
+  ) {
     return this.prisma.execution.findMany({
       where: { workflowId },
       include: {
@@ -104,10 +110,13 @@ export class ExecutionRepository {
     });
   }
 
-  async findByUserId(userId: number, options?: {
-    limit?: number;
-    offset?: number;
-  }) {
+  async findByUserId(
+    userId: number,
+    options?: {
+      limit?: number;
+      offset?: number;
+    },
+  ) {
     return this.prisma.execution.findMany({
       where: { userId },
       include: {
@@ -134,13 +143,16 @@ export class ExecutionRepository {
     });
   }
 
-  async update(id: number, data: {
-    status?: WorkflowStatus;
-    result?: Prisma.InputJsonValue;
-    error?: string;
-    startedAt?: Date;
-    completedAt?: Date;
-  }) {
+  async update(
+    id: number,
+    data: {
+      status?: WorkflowStatus;
+      result?: Prisma.InputJsonValue;
+      error?: string;
+      startedAt?: Date;
+      completedAt?: Date;
+    },
+  ) {
     return this.prisma.execution.update({
       where: { id },
       data,
@@ -178,14 +190,17 @@ export class ExecutionRepository {
     });
   }
 
-  async updateExecutionStep(id: number, data: {
-    status?: ExecutionStepStatus;
-    output?: Prisma.InputJsonValue;
-    error?: string;
-    retryCount?: number;
-    startedAt?: Date;
-    completedAt?: Date;
-  }) {
+  async updateExecutionStep(
+    id: number,
+    data: {
+      status?: ExecutionStepStatus;
+      output?: Prisma.InputJsonValue;
+      error?: string;
+      retryCount?: number;
+      startedAt?: Date;
+      completedAt?: Date;
+    },
+  ) {
     return this.prisma.executionStep.update({
       where: { id },
       data,
@@ -205,4 +220,3 @@ export class ExecutionRepository {
     });
   }
 }
-

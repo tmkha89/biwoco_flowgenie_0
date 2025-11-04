@@ -59,7 +59,10 @@ export class ConflictException extends HttpException {
  * Custom exception for workflow-specific errors
  */
 export class WorkflowException extends HttpException {
-  constructor(message: string, statusCode: HttpStatus = HttpStatus.BAD_REQUEST) {
+  constructor(
+    message: string,
+    statusCode: HttpStatus = HttpStatus.BAD_REQUEST,
+  ) {
     super(message, statusCode);
   }
 }
@@ -75,4 +78,3 @@ export class ExecutionException extends HttpException {
     super(fullMessage, HttpStatus.INTERNAL_SERVER_ERROR);
   }
 }
-

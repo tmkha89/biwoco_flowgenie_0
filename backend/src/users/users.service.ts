@@ -6,7 +6,13 @@ import { User } from '@prisma/client';
 export class UsersService {
   constructor(private usersRepository: UsersRepository) {}
 
-  async createUser(data: { username?: string; email?: string; name?: string; avatar?: string, password?: string }): Promise<User> {
+  async createUser(data: {
+    username?: string;
+    email?: string;
+    name?: string;
+    avatar?: string;
+    password?: string;
+  }): Promise<User> {
     return this.usersRepository.create(data);
   }
 
@@ -24,13 +30,19 @@ export class UsersService {
 
   async updateUser(
     id: number,
-    data: { name?: string; avatar?: string; password?: string; googleLinked?: boolean }
+    data: {
+      name?: string;
+      avatar?: string;
+      password?: string;
+      googleLinked?: boolean;
+    },
   ): Promise<User> {
     const updateData: Record<string, any> = {};
 
     if (data.name) updateData.name = data.name;
     if (data.avatar) updateData.avatar = data.avatar;
-    if (data.googleLinked !== undefined) updateData.googleLinked = data.googleLinked;
+    if (data.googleLinked !== undefined)
+      updateData.googleLinked = data.googleLinked;
 
     if (data.password && data.password.trim() !== '') {
       updateData.password = data.password;
@@ -50,7 +62,8 @@ export class UsersService {
     const updateData: Record<string, any> = {};
     if (data.name) updateData.name = data.name;
     if (data.avatar) updateData.avatar = data.avatar;
-    if (data.googleLinked !== undefined) updateData.googleLinked = data.googleLinked;
+    if (data.googleLinked !== undefined)
+      updateData.googleLinked = data.googleLinked;
 
     if (data.password && data.password.trim() !== '') {
       updateData.password = data.password;
@@ -73,4 +86,3 @@ export class UsersService {
     });
   }
 }
-

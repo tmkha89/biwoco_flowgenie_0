@@ -11,7 +11,10 @@ export class ExampleActionHandler extends BaseActionHandler {
   readonly type = 'example_action';
   readonly name = 'Example Action';
 
-  async execute(context: ExecutionContext, config: Record<string, any>): Promise<any> {
+  async execute(
+    context: ExecutionContext,
+    config: Record<string, any>,
+  ): Promise<any> {
     // Example: log the execution
     console.log(`Executing ${this.name} for workflow ${context.workflowId}`);
 
@@ -29,10 +32,9 @@ export class ExampleActionHandler extends BaseActionHandler {
     };
   }
 
-  validateConfig(config: Record<string, any>): boolean {
+  validateConfig(_config: Record<string, any>): boolean {
     // Validate that config has required fields
     // This example doesn't require any specific fields
     return true;
   }
 }
-

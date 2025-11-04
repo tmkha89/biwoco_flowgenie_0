@@ -22,7 +22,6 @@ try {
 const getBaseUrl = (): string => {
   const nodeEnv = process.env.NODE_ENV || 'development';
   const appUrl = process.env.APP_URL || 'http://localhost:3000';
-  const port = process.env.PORT || '3000';
 
   if (nodeEnv === 'production') {
     return process.env.API_URL || appUrl;
@@ -43,7 +42,8 @@ const swaggerOptions: swaggerJsdoc.Options = {
     info: {
       title: 'FlowGenie API Docs',
       version: packageJson.version || '1.0.0',
-      description: packageJson.description || 'FlowGenie backend API documentation',
+      description:
+        packageJson.description || 'FlowGenie backend API documentation',
       contact: {
         name: 'FlowGenie API Support',
       },
@@ -490,7 +490,8 @@ const swaggerOptions: swaggerJsdoc.Options = {
       },
       {
         name: 'Triggers',
-        description: 'Trigger endpoints for webhooks and Gmail Pub/Sub notifications',
+        description:
+          'Trigger endpoints for webhooks and Gmail Pub/Sub notifications',
       },
     ],
   },
@@ -506,4 +507,3 @@ const swaggerOptions: swaggerJsdoc.Options = {
 
 // Generate Swagger specification
 export const swaggerSpec = swaggerJsdoc(swaggerOptions);
-

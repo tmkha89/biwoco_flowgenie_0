@@ -8,7 +8,6 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
@@ -36,7 +35,7 @@ export class AuthController {
   /**
    * Example: Traditional email/password login route documentation
    * (Currently not implemented - app uses Google OAuth)
-   * 
+   *
    * @openapi
    * /auth/google:
    *   post:
@@ -84,16 +83,26 @@ export class AuthController {
       const authUrl = this.authService.getGoogleAuthUrl();
       console.log('🔐 [AuthController] Google Auth - Generated OAuth URL');
       console.log('🔐 [AuthController] Google Auth - Full OAuth URL:', authUrl);
-      console.log('🔐 [AuthController] Google Auth - URL starts with https://accounts.google.com:', authUrl.startsWith('https://accounts.google.com'));
-      console.log('🔐 [AuthController] Google Auth - URL length:', authUrl.length);
-      console.log('🔐 [AuthController] Google Auth - Redirecting to Google OAuth');
+      console.log(
+        '🔐 [AuthController] Google Auth - URL starts with https://accounts.google.com:',
+        authUrl.startsWith('https://accounts.google.com'),
+      );
+      console.log(
+        '🔐 [AuthController] Google Auth - URL length:',
+        authUrl.length,
+      );
+      console.log(
+        '🔐 [AuthController] Google Auth - Redirecting to Google OAuth',
+      );
       return res.redirect(authUrl);
     } catch (error: any) {
-      console.error('❌ [AuthController] Google Auth - Error generating OAuth URL:', error.message);
+      console.error(
+        '❌ [AuthController] Google Auth - Error generating OAuth URL:',
+        error.message,
+      );
       throw error;
     }
   }
-
 
   /**
    * @openapi
@@ -170,10 +179,7 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
-  async logout(
-    @Body() refreshTokenDto: RefreshTokenDto,
-    @CurrentUser() user: { id: number },
-  ) {
+  async logout(@Body() refreshTokenDto: RefreshTokenDto) {
     await this.authService.logout(refreshTokenDto.refresh_token);
     return { message: 'Logged out successfully' };
   }
@@ -249,7 +255,13 @@ export class AuthController {
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
   async signup(
-    @Body() body: { name: string; username: string; email?: string; password: string },
+    @Body()
+    body: {
+      name: string;
+      username: string;
+      email?: string;
+      password: string;
+    },
   ): Promise<AuthResponseDto> {
     console.log(body);
     return this.authService.signup(body);
@@ -297,49 +309,49 @@ export class AuthController {
   }
 
   /**
- * @openapi
- * /auth/login:
- *   post:
- *     summary: User login
- *     description: Authenticate a user using email and password.
- *     tags:
- *       - Authentication
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - password
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: user@example.com
- *               password:
- *                 type: string
- *                 format: password
- *                 example: P@ssword123
- *     responses:
- *       200:
- *         description: User authenticated successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
- *       401:
- *         description: Invalid credentials
- *       500:
- *         description: Server error
- */
+   * @openapi
+   * /auth/login:
+   *   post:
+   *     summary: User login
+   *     description: Authenticate a user using email and password.
+   *     tags:
+   *       - Authentication
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - email
+   *               - password
+   *             properties:
+   *               email:
+   *                 type: string
+   *                 format: email
+   *                 example: user@example.com
+   *               password:
+   *                 type: string
+   *                 format: password
+   *                 example: P@ssword123
+   *     responses:
+   *       200:
+   *         description: User authenticated successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AuthResponse'
+   *       401:
+   *         description: Invalid credentials
+   *       500:
+   *         description: Server error
+   */
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() body: { username: string; password: string },
   ): Promise<AuthResponseDto> {
-    var result = this.authService.login(body);
+    const result = this.authService.login(body);
     return result;
   }
 
@@ -369,11 +381,19 @@ export class AuthController {
    */
   @Post('google/connect')
   @UseGuards(JwtAuthGuard)
-  async googleConnect(@CurrentUser() user: { id: number }): Promise<{ url: string }> {
-    console.log(`🔗 [AuthController] Google Connect - User ${user.id} requesting OAuth URL`);
+  async googleConnect(
+    @CurrentUser() user: { id: number },
+  ): Promise<{ url: string }> {
+    console.log(
+      `🔗 [AuthController] Google Connect - User ${user.id} requesting OAuth URL`,
+    );
     const authUrl = this.authService.getGoogleConnectUrl(user.id);
-    console.log(`🔗 [AuthController] Google Connect - Generated OAuth URL for user ${user.id}`);
-    console.log(`🔗 [AuthController] Google Connect - OAuth URL: ${authUrl.substring(0, 100)}...`);
+    console.log(
+      `🔗 [AuthController] Google Connect - Generated OAuth URL for user ${user.id}`,
+    );
+    console.log(
+      `🔗 [AuthController] Google Connect - OAuth URL: ${authUrl.substring(0, 100)}...`,
+    );
     return { url: authUrl };
   }
 
@@ -430,22 +450,30 @@ export class AuthController {
     @Query('error') error: string,
     @Res() res: Response,
   ): Promise<void> {
-    console.log('📥 [AuthController] Google Callback - OAuth callback received');
-    console.log(`📥 [AuthController] Google Callback - Query params: code=${code ? 'present' : 'missing'}, state=${state ? 'present' : 'missing'}, error=${error || 'none'}`);
-    
+    console.log(
+      '📥 [AuthController] Google Callback - OAuth callback received',
+    );
+    console.log(
+      `📥 [AuthController] Google Callback - Query params: code=${code ? 'present' : 'missing'}, state=${state ? 'present' : 'missing'}, error=${error || 'none'}`,
+    );
+
     const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
     const SUCCESS_ROUTE = '/dashboard'; // Redirect to dashboard on success
     const LOGIN_ROUTE = '/login'; // Redirect to login on error
 
     // Error handling
     if (error) {
-      console.error(`❌ [AuthController] Google Callback - OAuth error: ${error}`);
+      console.error(
+        `❌ [AuthController] Google Callback - OAuth error: ${error}`,
+      );
       const redirectUrl = `${FRONTEND_URL}${LOGIN_ROUTE}?googleError=${encodeURIComponent(`OAuth error: ${error}`)}`;
       return res.redirect(redirectUrl);
     }
 
     if (!code) {
-      console.error('❌ [AuthController] Google Callback - Authorization code is missing');
+      console.error(
+        '❌ [AuthController] Google Callback - Authorization code is missing',
+      );
       const redirectUrl = `${FRONTEND_URL}${LOGIN_ROUTE}?googleError=${encodeURIComponent('Authorization code is missing')}`;
       return res.redirect(redirectUrl);
     }
@@ -456,16 +484,25 @@ export class AuthController {
     if (!state) {
       // No state = initial login flow
       try {
-        console.log(`🔄 [AuthController] Google Callback - No state, treating as initial login`);
+        console.log(
+          `🔄 [AuthController] Google Callback - No state, treating as initial login`,
+        );
         const result = await this.authService.googleLogin(code);
-        console.log(`✅ [AuthController] Google Callback - Initial login successful for user ${result.user.id}`);
-        
+        console.log(
+          `✅ [AuthController] Google Callback - Initial login successful for user ${result.user.id}`,
+        );
+
         // Store tokens in cookies or return them via URL (for now, redirect to callback with tokens)
         const redirectUrl = `${FRONTEND_URL}/oauth-redirect?access_token=${result.access_token}&refresh_token=${result.refresh_token}&googleLinked=${result.user.googleLinked}`;
-        console.log(`🔄 [AuthController] Google Callback - Redirecting to oauth-redirect`);
+        console.log(
+          `🔄 [AuthController] Google Callback - Redirecting to oauth-redirect`,
+        );
         return res.redirect(redirectUrl);
       } catch (err: any) {
-        console.error(`❌ [AuthController] Google Callback - Initial login error:`, err.message || err);
+        console.error(
+          `❌ [AuthController] Google Callback - Initial login error:`,
+          err.message || err,
+        );
         const redirectUrl = `${FRONTEND_URL}${LOGIN_ROUTE}?googleError=${encodeURIComponent(err.message || 'Login failed')}`;
         return res.redirect(redirectUrl);
       }
@@ -474,32 +511,52 @@ export class AuthController {
     // State exists = connecting existing account
     let userId: number;
     try {
-      console.log(`🔍 [AuthController] Google Callback - Parsing state parameter`);
-      const stateData = JSON.parse(Buffer.from(state, 'base64').toString('utf-8'));
-      console.log(`🔍 [AuthController] Google Callback - State data:`, stateData);
+      console.log(
+        `🔍 [AuthController] Google Callback - Parsing state parameter`,
+      );
+      const stateData = JSON.parse(
+        Buffer.from(state, 'base64').toString('utf-8'),
+      );
+      console.log(
+        `🔍 [AuthController] Google Callback - State data:`,
+        stateData,
+      );
       if (!stateData.userId) {
         throw new Error('Invalid state: userId missing');
       }
       userId = stateData.userId;
-      console.log(`✅ [AuthController] Google Callback - Extracted userId: ${userId}`);
+      console.log(
+        `✅ [AuthController] Google Callback - Extracted userId: ${userId}`,
+      );
     } catch (e: any) {
-      console.error(`❌ [AuthController] Google Callback - Failed to parse state: ${e.message}`);
+      console.error(
+        `❌ [AuthController] Google Callback - Failed to parse state: ${e.message}`,
+      );
       const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleError=${encodeURIComponent('Invalid state parameter')}`;
       return res.redirect(redirectUrl);
     }
 
     try {
-      console.log(`🔄 [AuthController] Google Callback - Connecting Google account for user ${userId}`);
+      console.log(
+        `🔄 [AuthController] Google Callback - Connecting Google account for user ${userId}`,
+      );
       // Connect Google account
       await this.authService.connectGoogleAccount(userId, code);
-      console.log(`✅ [AuthController] Google Callback - Successfully connected Google account for user ${userId}`);
-      
+      console.log(
+        `✅ [AuthController] Google Callback - Successfully connected Google account for user ${userId}`,
+      );
+
       // Redirect to frontend with success message
       const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleConnected=true`;
-      console.log(`🔄 [AuthController] Google Callback - Redirecting to: ${redirectUrl}`);
+      console.log(
+        `🔄 [AuthController] Google Callback - Redirecting to: ${redirectUrl}`,
+      );
       return res.redirect(redirectUrl);
     } catch (err: any) {
-      console.error(`❌ [AuthController] Google Callback - Error connecting Google account:`, err.message || err);
+      console.error(
+        `❌ [AuthController] Google Callback - Error connecting Google account:`,
+        err.message || err,
+      );
       const redirectUrl = `${FRONTEND_URL}${SUCCESS_ROUTE}?googleError=${encodeURIComponent(err.message || 'Failed to connect Google account')}`;
       return res.redirect(redirectUrl);
     }

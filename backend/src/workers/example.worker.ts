@@ -3,8 +3,8 @@
  * This is a template for creating new worker processors
  */
 import { Worker, Job } from 'bullmq';
-import { ExampleJobData, exampleQueue } from '../queues/example.queue';
-import { defaultQueueOptions, defaultWorkerOptions } from '../queues/queue.config';
+import { ExampleJobData } from '../queues/example.queue';
+import { defaultWorkerOptions } from '../queues/queue.config';
 
 /**
  * Example worker processor
@@ -20,8 +20,8 @@ export const exampleWorker = new Worker<ExampleJobData>(
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Process the job data
-      const { message, userId, metadata } = job.data;
-      
+      const { message, userId } = job.data;
+
       console.log(`[Worker] Job ${job.id} completed successfully`);
       console.log(`[Worker] Message: ${message}`);
       if (userId) {
@@ -42,7 +42,7 @@ export const exampleWorker = new Worker<ExampleJobData>(
   {
     ...defaultWorkerOptions,
     concurrency: 5, // Process up to 5 jobs concurrently
-  }
+  },
 );
 
 // Worker event handlers
@@ -57,4 +57,3 @@ exampleWorker.on('failed', (job, err) => {
 exampleWorker.on('error', (err) => {
   console.error(`[Worker] ⚠️ Worker error:`, err);
 });
-

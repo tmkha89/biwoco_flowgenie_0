@@ -10,15 +10,15 @@ import { ConnectionOptions } from 'bullmq';
  */
 export function getRedisConnection(): ConnectionOptions | string {
   const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-  
+
   // BullMQ can use URL strings directly, which is simpler
   // But we'll also support connection objects for more control
-  
+
   // If REDIS_URL is a full URL string, use it directly
   if (redisUrl.startsWith('redis://') || redisUrl.startsWith('rediss://')) {
     return redisUrl;
   }
-  
+
   // Fallback: parse individual components if URL is not provided
   return {
     host: process.env.REDIS_HOST || 'localhost',
@@ -32,7 +32,7 @@ export function getRedisConnection(): ConnectionOptions | string {
  */
 export function getRedisConnectionObject(): ConnectionOptions {
   const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-  
+
   // Parse Redis URL if it's a string
   if (redisUrl.startsWith('redis://') || redisUrl.startsWith('rediss://')) {
     try {
@@ -51,7 +51,7 @@ export function getRedisConnectionObject(): ConnectionOptions {
       };
     }
   }
-  
+
   // Fallback: parse individual components
   return {
     host: process.env.REDIS_HOST || 'localhost',
@@ -81,13 +81,12 @@ export const defaultQueueOptions = {
   },
 };
 
-
 /**
  * Get Redis connection options as a strict ConnectionOptions object.
  * This is required for Workers, which do not accept connection strings.
  */
 export function getWorkerRedisConnection(): ConnectionOptions {
-  // If REDIS_URL is a full URL string, you'd need a utility 
+  // If REDIS_URL is a full URL string, you'd need a utility
   // to parse it into host/port/password here if the worker
   // absolutely required an object.
   // However, based on your fallback logic, we can return the object structure:
