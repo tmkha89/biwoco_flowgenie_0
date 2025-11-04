@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnModuleDestroy, Optional, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  Optional,
+  Inject,
+} from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../../database/prisma.service';
 import { ITriggerHandler, TriggerType } from '../interfaces/workflow.interface';
@@ -11,7 +17,9 @@ import * as cron from 'node-cron';
  * Supports CRON expressions and fixed intervals
  */
 @Injectable()
-export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy {
+export class ScheduleTriggerHandler
+  implements ITriggerHandler, OnModuleDestroy
+{
   private readonly logger = new Logger(ScheduleTriggerHandler.name);
   readonly type: TriggerType = TriggerType.SCHEDULE;
   readonly name = 'Schedule Trigger';
@@ -32,30 +40,44 @@ export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy 
     // - cron: CRON expression (e.g., '0 * * * *' for every hour)
     // - interval: Fixed interval in seconds (e.g., 3600 for hourly)
     if (!config.cron && !config.interval) {
-      this.logger.warn('Schedule trigger validation failed: cron or interval is required');
+      this.logger.warn(
+        'Schedule trigger validation failed: cron or interval is required',
+      );
       return false;
     }
 
     if (config.cron && typeof config.cron !== 'string') {
-      this.logger.warn('Schedule trigger validation failed: cron must be a string');
+      this.logger.warn(
+        'Schedule trigger validation failed: cron must be a string',
+      );
       return false;
     }
 
-    if (config.interval && (typeof config.interval !== 'number' || config.interval <= 0)) {
-      this.logger.warn('Schedule trigger validation failed: interval must be a positive number');
+    if (
+      config.interval &&
+      (typeof config.interval !== 'number' || config.interval <= 0)
+    ) {
+      this.logger.warn(
+        'Schedule trigger validation failed: interval must be a positive number',
+      );
       return false;
     }
 
     // Validate CRON expression if provided
     if (config.cron && !cron.validate(config.cron)) {
-      this.logger.warn(`Schedule trigger validation failed: invalid CRON expression: ${config.cron}`);
+      this.logger.warn(
+        `Schedule trigger validation failed: invalid CRON expression: ${config.cron}`,
+      );
       return false;
     }
 
     return true;
   }
 
-  async register(workflowId: number, config: Record<string, any>): Promise<void> {
+  async register(
+    workflowId: number,
+    config: Record<string, any>,
+  ): Promise<void> {
     this.logger.log(`Registering schedule trigger for workflow ${workflowId}`);
 
     // Unregister existing job if any
@@ -65,8 +87,10 @@ export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy 
 
     if (config.cron) {
       // Schedule using CRON expression
-      this.logger.log(`Scheduling workflow ${workflowId} with CRON: ${config.cron}`);
-      
+      this.logger.log(
+        `Scheduling workflow ${workflowId} with CRON: ${config.cron}`,
+      );
+
       scheduleTask = cron.schedule(
         config.cron,
         async () => {
@@ -80,9 +104,10 @@ export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy 
     } else if (config.interval) {
       // Schedule using fixed interval (convert seconds to milliseconds)
       const intervalMs = config.interval * 1000;
-      this.logger.log(`Scheduling workflow ${workflowId} with interval: ${config.interval}s`);
+      this.logger.log(
+        `Scheduling workflow ${workflowId} with interval: ${config.interval}s`,
+      );
 
-      let intervalId: NodeJS.Timeout;
       const runTask = async () => {
         this.logger.log(`Interval trigger fired for workflow ${workflowId}`);
         await this.triggerWorkflow(workflowId, { interval: config.interval });
@@ -94,7 +119,7 @@ export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy 
       }
 
       // Schedule recurring execution
-      intervalId = setInterval(runTask, intervalMs);
+      const intervalId = setInterval(runTask, intervalMs);
 
       // Wrap in a cron-like task object for consistency
       scheduleTask = {
@@ -137,9 +162,13 @@ export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy 
             jobId: `schedule-${workflowId}`,
           },
         );
-        this.logger.log(`Added schedule to BullMQ queue for workflow ${workflowId}`);
+        this.logger.log(
+          `Added schedule to BullMQ queue for workflow ${workflowId}`,
+        );
       } catch (error: any) {
-        this.logger.warn(`Failed to add schedule to BullMQ queue: ${error.message}`);
+        this.logger.warn(
+          `Failed to add schedule to BullMQ queue: ${error.message}`,
+        );
       }
     }
 
@@ -155,11 +184,15 @@ export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy 
       },
     });
 
-    this.logger.log(`Schedule trigger registered successfully for workflow ${workflowId}`);
+    this.logger.log(
+      `Schedule trigger registered successfully for workflow ${workflowId}`,
+    );
   }
 
   async unregister(workflowId: number): Promise<void> {
-    this.logger.log(`Unregistering schedule trigger for workflow ${workflowId}`);
+    this.logger.log(
+      `Unregistering schedule trigger for workflow ${workflowId}`,
+    );
 
     // Stop cron job
     const job = this.scheduledJobs.get(workflowId);
@@ -177,7 +210,9 @@ export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy 
         this.logger.log(`BullMQ schedule removed for workflow ${workflowId}`);
       } catch (error: any) {
         // Job might not exist in queue, ignore error
-        this.logger.debug(`No BullMQ schedule found for workflow ${workflowId}`);
+        this.logger.debug(
+          `No BullMQ schedule found for workflow ${workflowId}`,
+        );
       }
     }
 
@@ -208,10 +243,13 @@ export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy 
   /**
    * Trigger workflow execution
    */
-  private async triggerWorkflow(workflowId: number, scheduleInfo: { cron?: string; interval?: number }): Promise<void> {
+  private async triggerWorkflow(
+    workflowId: number,
+    scheduleInfo: { cron?: string; interval?: number },
+  ): Promise<void> {
     try {
       this.logger.log(`Triggering workflow ${workflowId} via schedule`);
-      
+
       // Emit workflow trigger event
       this.workflowEventService.emitWorkflowTrigger(workflowId, {
         triggerType: TriggerType.SCHEDULE,
@@ -237,7 +275,10 @@ export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy 
         });
       }
     } catch (error: any) {
-      this.logger.error(`Error triggering scheduled workflow ${workflowId}:`, error.message);
+      this.logger.error(
+        `Error triggering scheduled workflow ${workflowId}:`,
+        error.message,
+      );
     }
   }
 
@@ -260,4 +301,3 @@ export class ScheduleTriggerHandler implements ITriggerHandler, OnModuleDestroy 
     return null;
   }
 }
-

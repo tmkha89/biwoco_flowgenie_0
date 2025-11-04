@@ -15,8 +15,9 @@ export class RefreshTokenService {
   ) {
     // Default to 7 days in seconds
     this.refreshTokenExpiration =
-      parseInt(this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN', '604800')) ||
-      604800;
+      parseInt(
+        this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN', '604800'),
+      ) || 604800;
   }
 
   async generateRefreshToken(userId: number): Promise<string> {
@@ -40,7 +41,9 @@ export class RefreshTokenService {
     return token;
   }
 
-  async validateRefreshToken(token: string): Promise<{ userId: number } | null> {
+  async validateRefreshToken(
+    token: string,
+  ): Promise<{ userId: number } | null> {
     // Check Redis first
     const cachedUserId = await this.redisService.get(`refresh_token:${token}`);
     if (cachedUserId) {
@@ -83,4 +86,3 @@ export class RefreshTokenService {
     await this.refreshTokenRepository.revokeAllForUser(userId);
   }
 }
-

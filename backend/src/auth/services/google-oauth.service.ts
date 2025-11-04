@@ -31,7 +31,10 @@ export class GoogleOAuthService {
 
   constructor(private configService: ConfigService) {
     const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID', '');
-    const clientSecret = this.configService.get<string>('GOOGLE_CLIENT_SECRET', '');
+    const clientSecret = this.configService.get<string>(
+      'GOOGLE_CLIENT_SECRET',
+      '',
+    );
     const redirectUri = this.configService.get<string>(
       'GOOGLE_REDIRECT_URI',
       '',
@@ -39,9 +42,12 @@ export class GoogleOAuthService {
 
     // Check if all credentials are provided
     const hasAllCredentials =
-      clientId && clientId.trim() !== '' &&
-      clientSecret && clientSecret.trim() !== '' &&
-      redirectUri && redirectUri.trim() !== '';
+      clientId &&
+      clientId.trim() !== '' &&
+      clientSecret &&
+      clientSecret.trim() !== '' &&
+      redirectUri &&
+      redirectUri.trim() !== '';
 
     if (!hasAllCredentials) {
       // Log warning but don't throw - allows app to start without OAuth
@@ -67,10 +73,18 @@ export class GoogleOAuthService {
       );
     }
 
-    console.log(`🔗 [GoogleOAuthService] getAuthorizationUrl - Generating OAuth authorization URL`);
-    console.log(`🔗 [GoogleOAuthService] getAuthorizationUrl - Client ID: ${this.clientId}`);
-    console.log(`🔗 [GoogleOAuthService] getAuthorizationUrl - Redirect URI: ${this.redirectUri}`);
-    console.log(`🔗 [GoogleOAuthService] getAuthorizationUrl - State: ${state ? 'present' : 'none'}`);
+    console.log(
+      `🔗 [GoogleOAuthService] getAuthorizationUrl - Generating OAuth authorization URL`,
+    );
+    console.log(
+      `🔗 [GoogleOAuthService] getAuthorizationUrl - Client ID: ${this.clientId}`,
+    );
+    console.log(
+      `🔗 [GoogleOAuthService] getAuthorizationUrl - Redirect URI: ${this.redirectUri}`,
+    );
+    console.log(
+      `🔗 [GoogleOAuthService] getAuthorizationUrl - State: ${state ? 'present' : 'none'}`,
+    );
 
     // Create OAuth2Client instance
     const oauth2Client = new OAuth2Client({
@@ -89,7 +103,9 @@ export class GoogleOAuthService {
       'https://mail.google.com',
     ];
 
-    console.log(`🔗 [GoogleOAuthService] getAuthorizationUrl - Scopes: ${scopes.join(' ')}`);
+    console.log(
+      `🔗 [GoogleOAuthService] getAuthorizationUrl - Scopes: ${scopes.join(' ')}`,
+    );
 
     // Generate authorization URL using googleapis
     const authUrl = oauth2Client.generateAuthUrl({
@@ -98,31 +114,49 @@ export class GoogleOAuthService {
       prompt: 'consent',
       state: state,
     });
-    
-    console.log(`✅ [GoogleOAuthService] getAuthorizationUrl - Authorization URL: ${authUrl}`);
-    
+
+    console.log(
+      `✅ [GoogleOAuthService] getAuthorizationUrl - Authorization URL: ${authUrl}`,
+    );
+
     // Validate URL format
     if (!authUrl || !authUrl.startsWith('https://accounts.google.com')) {
-      throw new Error(`Invalid OAuth URL generated: ${authUrl ? authUrl.substring(0, 100) : 'null'}`);
+      throw new Error(
+        `Invalid OAuth URL generated: ${authUrl ? authUrl.substring(0, 100) : 'null'}`,
+      );
     }
-    
-    console.log(`✅ [GoogleOAuthService] getAuthorizationUrl - Authorization URL generated using googleapis`);
-    console.log(`✅ [GoogleOAuthService] getAuthorizationUrl - Full URL length: ${authUrl.length} characters`);
-    console.log(`✅ [GoogleOAuthService] getAuthorizationUrl - Full URL: ${authUrl}`);
+
+    console.log(
+      `✅ [GoogleOAuthService] getAuthorizationUrl - Authorization URL generated using googleapis`,
+    );
+    console.log(
+      `✅ [GoogleOAuthService] getAuthorizationUrl - Full URL length: ${authUrl.length} characters`,
+    );
+    console.log(
+      `✅ [GoogleOAuthService] getAuthorizationUrl - Full URL: ${authUrl}`,
+    );
     return authUrl;
   }
 
   async exchangeCodeForTokens(code: string): Promise<GoogleTokenResponse> {
-    console.log(`🔄 [GoogleOAuthService] exchangeCodeForTokens - Exchanging authorization code for tokens`);
+    console.log(
+      `🔄 [GoogleOAuthService] exchangeCodeForTokens - Exchanging authorization code for tokens`,
+    );
     if (!this.isEnabled) {
-      console.error('❌ [GoogleOAuthService] exchangeCodeForTokens - Google OAuth is not configured');
+      console.error(
+        '❌ [GoogleOAuthService] exchangeCodeForTokens - Google OAuth is not configured',
+      );
       throw new Error(
         'Google OAuth is not configured. Please set required environment variables.',
       );
     }
 
-    console.log(`🔄 [GoogleOAuthService] exchangeCodeForTokens - Code: ${code.substring(0, 20)}...`);
-    console.log(`🔄 [GoogleOAuthService] exchangeCodeForTokens - Redirect URI: ${this.redirectUri}`);
+    console.log(
+      `🔄 [GoogleOAuthService] exchangeCodeForTokens - Code: ${code.substring(0, 20)}...`,
+    );
+    console.log(
+      `🔄 [GoogleOAuthService] exchangeCodeForTokens - Redirect URI: ${this.redirectUri}`,
+    );
     const params = new URLSearchParams({
       code,
       client_id: this.clientId,
@@ -131,9 +165,15 @@ export class GoogleOAuthService {
       grant_type: 'authorization_code',
     });
 
-    console.log(`📡 [GoogleOAuthService] exchangeCodeForTokens - Calling Google token endpoint`);
-    console.log(`📡 [GoogleOAuthService] exchangeCodeForTokens - Client ID: ${this.clientId}`);
-    console.log(`📡 [GoogleOAuthService] exchangeCodeForTokens - Redirect URI: ${this.redirectUri}`);
+    console.log(
+      `📡 [GoogleOAuthService] exchangeCodeForTokens - Calling Google token endpoint`,
+    );
+    console.log(
+      `📡 [GoogleOAuthService] exchangeCodeForTokens - Client ID: ${this.clientId}`,
+    );
+    console.log(
+      `📡 [GoogleOAuthService] exchangeCodeForTokens - Redirect URI: ${this.redirectUri}`,
+    );
     try {
       const response = await axios.post<GoogleTokenResponse>(
         'https://oauth2.googleapis.com/token',
@@ -145,21 +185,38 @@ export class GoogleOAuthService {
         },
       );
 
-      console.log(`✅ [GoogleOAuthService] exchangeCodeForTokens - Token exchange successful`);
-      console.log(`✅ [GoogleOAuthService] exchangeCodeForTokens - Response: access_token=${response.data.access_token ? 'present' : 'missing'}, refresh_token=${response.data.refresh_token ? 'present' : 'missing'}, expires_in=${response.data.expires_in}, scope=${response.data.scope}`);
+      console.log(
+        `✅ [GoogleOAuthService] exchangeCodeForTokens - Token exchange successful`,
+      );
+      console.log(
+        `✅ [GoogleOAuthService] exchangeCodeForTokens - Response: access_token=${response.data.access_token ? 'present' : 'missing'}, refresh_token=${response.data.refresh_token ? 'present' : 'missing'}, expires_in=${response.data.expires_in}, scope=${response.data.scope}`,
+      );
       return response.data;
     } catch (error: any) {
-      console.error(`❌ [GoogleOAuthService] exchangeCodeForTokens - Token exchange failed`);
-      console.error(`❌ [GoogleOAuthService] exchangeCodeForTokens - Status: ${error.response?.status}`);
-      console.error(`❌ [GoogleOAuthService] exchangeCodeForTokens - Error data:`, JSON.stringify(error.response?.data, null, 2));
-      console.error(`❌ [GoogleOAuthService] exchangeCodeForTokens - Error message: ${error.message}`);
+      console.error(
+        `❌ [GoogleOAuthService] exchangeCodeForTokens - Token exchange failed`,
+      );
+      console.error(
+        `❌ [GoogleOAuthService] exchangeCodeForTokens - Status: ${error.response?.status}`,
+      );
+      console.error(
+        `❌ [GoogleOAuthService] exchangeCodeForTokens - Error data:`,
+        JSON.stringify(error.response?.data, null, 2),
+      );
+      console.error(
+        `❌ [GoogleOAuthService] exchangeCodeForTokens - Error message: ${error.message}`,
+      );
       throw error;
     }
   }
 
   async getUserInfo(accessToken: string): Promise<GoogleUserInfo> {
-    console.log(`🔄 [GoogleOAuthService] getUserInfo - Fetching user info from Google API`);
-    console.log(`🔄 [GoogleOAuthService] getUserInfo - Access token: ${accessToken.substring(0, 20)}...`);
+    console.log(
+      `🔄 [GoogleOAuthService] getUserInfo - Fetching user info from Google API`,
+    );
+    console.log(
+      `🔄 [GoogleOAuthService] getUserInfo - Access token: ${accessToken.substring(0, 20)}...`,
+    );
     const response = await axios.get<GoogleUserInfo>(
       'https://www.googleapis.com/oauth2/v2/userinfo',
       {
@@ -169,19 +226,25 @@ export class GoogleOAuthService {
       },
     );
 
-    console.log(`✅ [GoogleOAuthService] getUserInfo - User info retrieved: email=${response.data.email}, id=${response.data.id}, name=${response.data.name}`);
+    console.log(
+      `✅ [GoogleOAuthService] getUserInfo - User info retrieved: email=${response.data.email}, id=${response.data.id}, name=${response.data.name}`,
+    );
     return response.data;
   }
 
   async decodeIdToken(idToken: string): Promise<GoogleUserInfo | null> {
     console.log(`🔄 [GoogleOAuthService] decodeIdToken - Decoding ID token`);
-    console.log(`🔄 [GoogleOAuthService] decodeIdToken - ID token: ${idToken.substring(0, 30)}...`);
+    console.log(
+      `🔄 [GoogleOAuthService] decodeIdToken - ID token: ${idToken.substring(0, 30)}...`,
+    );
     try {
       // Decode JWT without verification (Google's ID tokens are signed)
       // In production, you should verify the token signature
       const parts = idToken.split('.');
       if (parts.length !== 3) {
-        console.error(`❌ [GoogleOAuthService] decodeIdToken - Invalid ID token format (expected 3 parts, got ${parts.length})`);
+        console.error(
+          `❌ [GoogleOAuthService] decodeIdToken - Invalid ID token format (expected 3 parts, got ${parts.length})`,
+        );
         return null;
       }
 
@@ -199,15 +262,23 @@ export class GoogleOAuthService {
         family_name: payload.family_name || '',
       };
 
-      console.log(`✅ [GoogleOAuthService] decodeIdToken - ID token decoded: email=${userInfo.email}, id=${userInfo.id}, name=${userInfo.name}`);
+      console.log(
+        `✅ [GoogleOAuthService] decodeIdToken - ID token decoded: email=${userInfo.email}, id=${userInfo.id}, name=${userInfo.name}`,
+      );
       return userInfo;
     } catch (error: any) {
-      console.error(`❌ [GoogleOAuthService] decodeIdToken - Failed to decode ID token: ${error.message}`);
+      console.error(
+        `❌ [GoogleOAuthService] decodeIdToken - Failed to decode ID token: ${error.message}`,
+      );
       return null;
     }
   }
 
-  async refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_in: number; refresh_token?: string }> {
+  async refreshAccessToken(refreshToken: string): Promise<{
+    access_token: string;
+    expires_in: number;
+    refresh_token?: string;
+  }> {
     if (!this.isEnabled) {
       throw new Error(
         'Google OAuth is not configured. Please set required environment variables.',

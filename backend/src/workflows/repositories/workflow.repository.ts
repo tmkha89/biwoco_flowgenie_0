@@ -117,11 +117,14 @@ export class WorkflowRepository {
     });
   }
 
-  async update(id: number, data: {
-    name?: string;
-    description?: string;
-    enabled?: boolean;
-  }) {
+  async update(
+    id: number,
+    data: {
+      name?: string;
+      description?: string;
+      enabled?: boolean;
+    },
+  ) {
     return this.prisma.workflow.update({
       where: { id },
       data,
@@ -142,4 +145,3 @@ export class WorkflowRepository {
     });
   }
 }
-

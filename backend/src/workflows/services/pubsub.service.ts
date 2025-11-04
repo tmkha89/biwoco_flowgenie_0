@@ -16,12 +16,17 @@ export class PubSubService implements OnModuleInit {
 
   constructor(private readonly configService: ConfigService) {
     // Use GOOGLE_PROJECT_NAME first, fallback to GCP_PROJECT_ID for backward compatibility
-    this.projectId = this.configService.get<string>('GOOGLE_PROJECT_NAME') || 
-                     this.configService.get<string>('GCP_PROJECT_ID') || '';
-    this.publicApiUrl = this.configService.get<string>('PUBLIC_API_URL') || 
-                       this.configService.get<string>('FRONTEND_URL')?.replace('5173', '3000') || 
-                       'http://localhost:3000';
-    this.credentialsPath = this.configService.get<string>('GOOGLE_APPLICATION_CREDENTIALS');
+    this.projectId =
+      this.configService.get<string>('GOOGLE_PROJECT_NAME') ||
+      this.configService.get<string>('GCP_PROJECT_ID') ||
+      '';
+    this.publicApiUrl =
+      this.configService.get<string>('PUBLIC_API_URL') ||
+      this.configService.get<string>('FRONTEND_URL')?.replace('5173', '3000') ||
+      'http://localhost:3000';
+    this.credentialsPath = this.configService.get<string>(
+      'GOOGLE_APPLICATION_CREDENTIALS',
+    );
   }
 
   /**
@@ -31,7 +36,9 @@ export class PubSubService implements OnModuleInit {
   onModuleInit() {
     this.logger.log(`[PubSub] Initializing Pub/Sub service...`);
     this.logger.log(`[PubSub] Project ID: ${this.projectId || 'NOT SET'}`);
-    this.logger.log(`[PubSub] Credentials path: ${this.credentialsPath || 'NOT SET'}`);
+    this.logger.log(
+      `[PubSub] Credentials path: ${this.credentialsPath || 'NOT SET'}`,
+    );
     this.logger.log(`[PubSub] Public API URL: ${this.publicApiUrl}`);
 
     // Validate PUBLIC_API_URL is publicly accessible
@@ -43,26 +50,34 @@ export class PubSubService implements OnModuleInit {
       // Don't try to use default credentials (Application Default Credentials) as it fails locally
       if (this.credentialsPath) {
         try {
-          this.logger.log(`[PubSub] Initializing Pub/Sub client with credentials from: ${this.credentialsPath} for project: ${this.projectId}`);
+          this.logger.log(
+            `[PubSub] Initializing Pub/Sub client with credentials from: ${this.credentialsPath} for project: ${this.projectId}`,
+          );
           this.pubsub = new PubSub({
             projectId: this.projectId,
             keyFilename: this.credentialsPath,
           });
-          this.logger.log(`[PubSub] ✅ Pub/Sub client initialized successfully for project: ${this.projectId}`);
+          this.logger.log(
+            `[PubSub] ✅ Pub/Sub client initialized successfully for project: ${this.projectId}`,
+          );
         } catch (error: any) {
-          this.logger.error(`[PubSub] Failed to initialize Pub/Sub client: ${error.message}`);
+          this.logger.error(
+            `[PubSub] Failed to initialize Pub/Sub client: ${error.message}`,
+          );
           this.pubsub = null;
         }
       } else {
         this.logger.warn(
           `[PubSub] ⚠️ GOOGLE_APPLICATION_CREDENTIALS not set. Pub/Sub functionality disabled.\n` +
-          `Please set GOOGLE_APPLICATION_CREDENTIALS to the path of your service account JSON key file.\n` +
-          `Example: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
+            `Please set GOOGLE_APPLICATION_CREDENTIALS to the path of your service account JSON key file.\n` +
+            `Example: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`,
         );
         this.pubsub = null;
       }
     } else {
-      this.logger.warn(`[PubSub] ⚠️ GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) not set, Pub/Sub functionality disabled`);
+      this.logger.warn(
+        `[PubSub] ⚠️ GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) not set, Pub/Sub functionality disabled`,
+      );
     }
   }
 
@@ -72,35 +87,36 @@ export class PubSubService implements OnModuleInit {
    */
   private validatePushEndpoint(pushEndpoint: string): void {
     const url = pushEndpoint.toLowerCase();
-    
+
     // Check for localhost, 127.0.0.1, or private IP ranges
-    const isLocalhost = url.includes('localhost') || 
-                       url.includes('127.0.0.1') || 
-                       url.includes('0.0.0.0') ||
-                       url.startsWith('http://192.168.') ||
-                       url.startsWith('http://10.') ||
-                       url.match(/^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\./);
+    const isLocalhost =
+      url.includes('localhost') ||
+      url.includes('127.0.0.1') ||
+      url.includes('0.0.0.0') ||
+      url.startsWith('http://192.168.') ||
+      url.startsWith('http://10.') ||
+      url.match(/^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\./);
 
     if (isLocalhost) {
       const port = this.publicApiUrl.match(/:(\d+)/)?.[1] || '3000';
       throw new Error(
         `Invalid push endpoint: ${pushEndpoint}\n\n` +
-        `Google Cloud Pub/Sub cannot reach localhost URLs. Your webhook endpoint will not work!\n\n` +
-        `✅ SOLUTION: Use a tunneling service (e.g., ngrok) to expose your local server:\n` +
-        `   1. Install ngrok: https://ngrok.com/download\n` +
-        `   2. Start your Nest.js server on port ${port}\n` +
-        `   3. Run: ngrok http ${port}\n` +
-        `   4. Copy the HTTPS URL (e.g., https://aBcD1234.ngrok.io)\n` +
-        `   5. Set PUBLIC_API_URL=https://aBcD1234.ngrok.io\n` +
-        `   6. Restart your Nest.js server\n\n` +
-        `Note: Google Cloud requires HTTPS endpoints for push subscriptions.`
+          `Google Cloud Pub/Sub cannot reach localhost URLs. Your webhook endpoint will not work!\n\n` +
+          `✅ SOLUTION: Use a tunneling service (e.g., ngrok) to expose your local server:\n` +
+          `   1. Install ngrok: https://ngrok.com/download\n` +
+          `   2. Start your Nest.js server on port ${port}\n` +
+          `   3. Run: ngrok http ${port}\n` +
+          `   4. Copy the HTTPS URL (e.g., https://aBcD1234.ngrok.io)\n` +
+          `   5. Set PUBLIC_API_URL=https://aBcD1234.ngrok.io\n` +
+          `   6. Restart your Nest.js server\n\n` +
+          `Note: Google Cloud requires HTTPS endpoints for push subscriptions.`,
       );
     }
 
     if (!url.startsWith('https://')) {
       this.logger.warn(
         `[PubSub] ⚠️ Push endpoint is not using HTTPS: ${pushEndpoint}\n` +
-        `Google Cloud Pub/Sub requires HTTPS endpoints for push subscriptions in production.`
+          `Google Cloud Pub/Sub requires HTTPS endpoints for push subscriptions in production.`,
       );
     }
   }
@@ -111,33 +127,34 @@ export class PubSubService implements OnModuleInit {
    */
   private validatePublicApiUrl(): void {
     const url = this.publicApiUrl.toLowerCase();
-    
+
     // Check for localhost, 127.0.0.1, or private IP ranges
-    const isLocalhost = url.includes('localhost') || 
-                       url.includes('127.0.0.1') || 
-                       url.includes('0.0.0.0') ||
-                       url.startsWith('http://192.168.') ||
-                       url.startsWith('http://10.') ||
-                       url.match(/^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\./);
+    const isLocalhost =
+      url.includes('localhost') ||
+      url.includes('127.0.0.1') ||
+      url.includes('0.0.0.0') ||
+      url.startsWith('http://192.168.') ||
+      url.startsWith('http://10.') ||
+      url.match(/^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\./);
 
     if (isLocalhost) {
       this.logger.error(
         `[PubSub] ⚠️ WARNING: PUBLIC_API_URL is set to a localhost/private address: ${this.publicApiUrl}\n` +
-        `Google Cloud Pub/Sub cannot reach localhost URLs. Your webhook endpoint will not work!\n\n` +
-        `✅ SOLUTION: Use a tunneling service (e.g., ngrok) to expose your local server:\n` +
-        `   1. Install ngrok: https://ngrok.com/download\n` +
-        `   2. Start your Nest.js server on port ${this.publicApiUrl.match(/:(\d+)/)?.[1] || '3000'}\n` +
-        `   3. Run: ngrok http ${this.publicApiUrl.match(/:(\d+)/)?.[1] || '3000'}\n` +
-        `   4. Copy the HTTPS URL (e.g., https://aBcD1234.ngrok.io)\n` +
-        `   5. Set PUBLIC_API_URL=https://aBcD1234.ngrok.io\n` +
-        `   6. Restart your Nest.js server\n\n` +
-        `Note: Google Cloud requires HTTPS endpoints for push subscriptions.`
+          `Google Cloud Pub/Sub cannot reach localhost URLs. Your webhook endpoint will not work!\n\n` +
+          `✅ SOLUTION: Use a tunneling service (e.g., ngrok) to expose your local server:\n` +
+          `   1. Install ngrok: https://ngrok.com/download\n` +
+          `   2. Start your Nest.js server on port ${this.publicApiUrl.match(/:(\d+)/)?.[1] || '3000'}\n` +
+          `   3. Run: ngrok http ${this.publicApiUrl.match(/:(\d+)/)?.[1] || '3000'}\n` +
+          `   4. Copy the HTTPS URL (e.g., https://aBcD1234.ngrok.io)\n` +
+          `   5. Set PUBLIC_API_URL=https://aBcD1234.ngrok.io\n` +
+          `   6. Restart your Nest.js server\n\n` +
+          `Note: Google Cloud requires HTTPS endpoints for push subscriptions.`,
       );
     } else if (!url.startsWith('https://')) {
       this.logger.warn(
         `[PubSub] ⚠️ PUBLIC_API_URL is not using HTTPS: ${this.publicApiUrl}\n` +
-        `Google Cloud Pub/Sub requires HTTPS endpoints for push subscriptions in production.\n` +
-        `Consider using HTTPS (e.g., via ngrok or a reverse proxy).`
+          `Google Cloud Pub/Sub requires HTTPS endpoints for push subscriptions in production.\n` +
+          `Consider using HTTPS (e.g., via ngrok or a reverse proxy).`,
       );
     }
   }
@@ -146,7 +163,9 @@ export class PubSubService implements OnModuleInit {
    * Check if Pub/Sub is available
    */
   isAvailable(): boolean {
-    return this.pubsub !== null && !!this.projectId && this.projectId.trim() !== '';
+    return (
+      this.pubsub !== null && !!this.projectId && this.projectId.trim() !== ''
+    );
   }
 
   /**
@@ -161,7 +180,9 @@ export class PubSubService implements OnModuleInit {
    */
   getTopicPath(userId: number): string {
     if (!this.projectId || this.projectId.trim() === '') {
-      throw new Error('GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) is not set. Cannot generate topic path.');
+      throw new Error(
+        'GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) is not set. Cannot generate topic path.',
+      );
     }
     return `projects/${this.projectId}/topics/${this.getTopicName(userId)}`;
   }
@@ -194,7 +215,9 @@ export class PubSubService implements OnModuleInit {
    */
   async createTopic(userId: number): Promise<string> {
     if (!this.isAvailable()) {
-      throw new Error('Pub/Sub is not available. Please set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS');
+      throw new Error(
+        'Pub/Sub is not available. Please set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS',
+      );
     }
 
     const topicName = this.getTopicName(userId);
@@ -204,10 +227,10 @@ export class PubSubService implements OnModuleInit {
 
     try {
       const topic = this.pubsub!.topic(topicName);
-      
+
       // Check if topic exists first
       const [exists] = await topic.exists();
-      
+
       if (exists) {
         this.logger.log(`[PubSub] Topic ${topicName} already exists`);
         // Grant permission even if topic already exists (in case it was created without permission)
@@ -231,13 +254,18 @@ export class PubSubService implements OnModuleInit {
     } catch (error: any) {
       // Error code 6 = AlreadyExists (from gRPC)
       if (error.code === 6 || error.message?.includes('AlreadyExists')) {
-        this.logger.log(`[PubSub] Topic ${topicName} already exists (code: ${error.code})`);
+        this.logger.log(
+          `[PubSub] Topic ${topicName} already exists (code: ${error.code})`,
+        );
         // Grant permission even if topic already exists (in case it was created without permission)
         await this.grantGmailPublisherPermission(topicName);
         return topicPath;
       }
-      
-      this.logger.error(`[PubSub] Failed to create topic ${topicName}:`, error.message);
+
+      this.logger.error(
+        `[PubSub] Failed to create topic ${topicName}:`,
+        error.message,
+      );
       throw new Error(`Failed to create Pub/Sub topic: ${error.message}`);
     }
   }
@@ -246,9 +274,14 @@ export class PubSubService implements OnModuleInit {
    * Create a push subscription for a topic
    * Returns the subscription path
    */
-  async createSubscription(userId: number, topicPath: string): Promise<string> {
+  async createSubscription(
+    userId: number,
+    _topicPath: string,
+  ): Promise<string> {
     if (!this.isAvailable()) {
-      throw new Error('Pub/Sub is not available. Please set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS');
+      throw new Error(
+        'Pub/Sub is not available. Please set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS',
+      );
     }
 
     const subscriptionName = this.getSubscriptionName();
@@ -258,51 +291,67 @@ export class PubSubService implements OnModuleInit {
     // Validate push endpoint is publicly accessible before creating subscription
     this.validatePushEndpoint(pushEndpoint);
 
-    this.logger.log(`[PubSub] Creating subscription: ${subscriptionName} for user ${userId}`);
+    this.logger.log(
+      `[PubSub] Creating subscription: ${subscriptionName} for user ${userId}`,
+    );
     this.logger.log(`[PubSub] Push endpoint: ${pushEndpoint}`);
 
     try {
       const topic = this.pubsub!.topic(this.getTopicName(userId));
-      
+
       // Check if subscription exists
       const subscription = topic.subscription(subscriptionName);
       const [exists] = await subscription.exists();
-      
+
       if (exists) {
-        this.logger.log(`[PubSub] Subscription ${subscriptionName} already exists, updating push endpoint`);
-        
+        this.logger.log(
+          `[PubSub] Subscription ${subscriptionName} already exists, updating push endpoint`,
+        );
+
         // Update push endpoint if it changed
         await subscription.modifyPushConfig({
           pushEndpoint,
         });
-        
-        this.logger.log(`[PubSub] Subscription ${subscriptionName} updated successfully`);
+
+        this.logger.log(
+          `[PubSub] Subscription ${subscriptionName} updated successfully`,
+        );
         return subscriptionPath;
       }
 
       // Create subscription with retry logic
       const [createdSubscription] = await this.retryOperation(
-        () => subscription.create({
-          pushConfig: {
-            pushEndpoint,
-          },
-          ackDeadlineSeconds: 10,
-        }),
+        () =>
+          subscription.create({
+            pushConfig: {
+              pushEndpoint,
+            },
+            ackDeadlineSeconds: 10,
+          }),
         `create subscription ${subscriptionName}`,
         3,
       );
 
-      this.logger.log(`[PubSub] Subscription ${subscriptionName} created successfully`);
+      this.logger.log(
+        `[PubSub] Subscription ${subscriptionName} created successfully`,
+      );
       return createdSubscription.name || subscriptionPath;
     } catch (error: any) {
       // Error code 6 = AlreadyExists
       if (error.code === 6 || error.message?.includes('AlreadyExists')) {
-        this.logger.log(`[PubSub] Subscription ${subscriptionName} already exists (code: ${error.code})`);
+        this.logger.log(
+          `[PubSub] Subscription ${subscriptionName} already exists (code: ${error.code})`,
+        );
         return subscriptionPath;
       }
-      
-      this.logger.error(`[PubSub] Failed to create subscription ${subscriptionName}:`, error.message);
-      throw new Error(`Failed to create Pub/Sub subscription: ${error.message}`);
+
+      this.logger.error(
+        `[PubSub] Failed to create subscription ${subscriptionName}:`,
+        error.message,
+      );
+      throw new Error(
+        `Failed to create Pub/Sub subscription: ${error.message}`,
+      );
     }
   }
 
@@ -316,36 +365,44 @@ export class PubSubService implements OnModuleInit {
     }
 
     const gmailServiceAccount = 'gmail-api-push@system.gserviceaccount.com';
-    
-    this.logger.log(`[PubSub] Checking permissions for ${gmailServiceAccount} on topic ${topicPath}`);
+
+    this.logger.log(
+      `[PubSub] Checking permissions for ${gmailServiceAccount} on topic ${topicPath}`,
+    );
 
     try {
       // Extract user ID from topic path: projects/{projectId}/topics/flowgenie-gmail-{userId}
       const userIdMatch = topicPath.match(/flowgenie-gmail-(\d+)/);
       if (!userIdMatch || !userIdMatch[1]) {
-        this.logger.warn(`[PubSub] Could not extract user ID from topic path: ${topicPath}`);
+        this.logger.warn(
+          `[PubSub] Could not extract user ID from topic path: ${topicPath}`,
+        );
         return false;
       }
 
       const userId = parseInt(userIdMatch[1], 10);
       const topicName = this.getTopicName(userId);
       const topic = this.pubsub!.topic(topicName);
-      
+
       // Ensure topic exists before checking permissions
       const [exists] = await topic.exists();
       if (!exists) {
-        this.logger.log(`[PubSub] Topic ${topicName} does not exist, creating it...`);
+        this.logger.log(
+          `[PubSub] Topic ${topicName} does not exist, creating it...`,
+        );
         await this.createTopic(userId);
         this.logger.log(`[PubSub] ✅ Topic ${topicName} created successfully`);
       }
 
       // Now check permissions
       const [policy] = await topic.iam.getPolicy();
-      
-      const hasPermission = policy.bindings.some(binding => {
+
+      const hasPermission = policy.bindings.some((binding) => {
         const isPublisher = binding.role === 'roles/pubsub.publisher';
-        const hasServiceAccount = binding.members?.some(member => 
-          member.includes(gmailServiceAccount) || member === `serviceAccount:${gmailServiceAccount}`
+        const hasServiceAccount = binding.members?.some(
+          (member) =>
+            member.includes(gmailServiceAccount) ||
+            member === `serviceAccount:${gmailServiceAccount}`,
         );
         return isPublisher && hasServiceAccount;
       });
@@ -353,56 +410,72 @@ export class PubSubService implements OnModuleInit {
       if (!hasPermission) {
         this.logger.warn(
           `[PubSub] ⚠️ Gmail push service account does not have permission to publish to topic.\n` +
-          `Please add IAM role: roles/pubsub.publisher to service account ${gmailServiceAccount}\n` +
-          `You can do this in Google Cloud Console: IAM & Admin > IAM > Add Principal`
+            `Please add IAM role: roles/pubsub.publisher to service account ${gmailServiceAccount}\n` +
+            `You can do this in Google Cloud Console: IAM & Admin > IAM > Add Principal`,
         );
       } else {
-        this.logger.log(`[PubSub] ✅ Gmail push service account has permission to publish`);
+        this.logger.log(
+          `[PubSub] ✅ Gmail push service account has permission to publish`,
+        );
       }
 
       return hasPermission;
     } catch (error: any) {
       // If topic doesn't exist, try to create it
-      if (error.code === 5 || error.message?.includes('NotFound') || error.message?.includes('not found')) {
+      if (
+        error.code === 5 ||
+        error.message?.includes('NotFound') ||
+        error.message?.includes('not found')
+      ) {
         this.logger.log(`[PubSub] Topic not found, attempting to create it...`);
-        
+
         try {
           const userIdMatch = topicPath.match(/flowgenie-gmail-(\d+)/);
           if (userIdMatch && userIdMatch[1]) {
             const userId = parseInt(userIdMatch[1], 10);
             await this.createTopic(userId);
-            this.logger.log(`[PubSub] ✅ Topic created, retrying permission check...`);
-            
+            this.logger.log(
+              `[PubSub] ✅ Topic created, retrying permission check...`,
+            );
+
             // Retry permission check after creating topic
             const topicName = this.getTopicName(userId);
             const topic = this.pubsub!.topic(topicName);
             const [policy] = await topic.iam.getPolicy();
-            
-            const hasPermission = policy.bindings.some(binding => {
+
+            const hasPermission = policy.bindings.some((binding) => {
               const isPublisher = binding.role === 'roles/pubsub.publisher';
-              const hasServiceAccount = binding.members?.some(member => 
-                member.includes(gmailServiceAccount) || member === `serviceAccount:${gmailServiceAccount}`
+              const hasServiceAccount = binding.members?.some(
+                (member) =>
+                  member.includes(gmailServiceAccount) ||
+                  member === `serviceAccount:${gmailServiceAccount}`,
               );
               return isPublisher && hasServiceAccount;
             });
-            
+
             if (!hasPermission) {
               this.logger.warn(
                 `[PubSub] ⚠️ Gmail push service account does not have permission to publish to topic.\n` +
-                `Please add IAM role: roles/pubsub.publisher to service account ${gmailServiceAccount}`
+                  `Please add IAM role: roles/pubsub.publisher to service account ${gmailServiceAccount}`,
               );
             } else {
-              this.logger.log(`[PubSub] ✅ Gmail push service account has permission to publish`);
+              this.logger.log(
+                `[PubSub] ✅ Gmail push service account has permission to publish`,
+              );
             }
-            
+
             return hasPermission;
           }
         } catch (createError: any) {
-          this.logger.error(`[PubSub] Failed to create topic: ${createError.message}`);
+          this.logger.error(
+            `[PubSub] Failed to create topic: ${createError.message}`,
+          );
         }
       }
-      
-      this.logger.warn(`[PubSub] Could not check permissions: ${error.message}`);
+
+      this.logger.warn(
+        `[PubSub] Could not check permissions: ${error.message}`,
+      );
       // Don't fail if permission check fails
       return false;
     }
@@ -428,7 +501,10 @@ export class PubSubService implements OnModuleInit {
         this.logger.log(`[PubSub] Topic ${topicName} does not exist`);
         return;
       }
-      this.logger.error(`[PubSub] Failed to delete topic ${topicName}:`, error.message);
+      this.logger.error(
+        `[PubSub] Failed to delete topic ${topicName}:`,
+        error.message,
+      );
       throw error;
     }
   }
@@ -442,19 +518,28 @@ export class PubSubService implements OnModuleInit {
     }
 
     const subscriptionName = this.getSubscriptionName();
-    this.logger.log(`[PubSub] Deleting subscription: ${subscriptionName} for user ${userId}`);
+    this.logger.log(
+      `[PubSub] Deleting subscription: ${subscriptionName} for user ${userId}`,
+    );
 
     try {
       const topic = this.pubsub!.topic(this.getTopicName(userId));
       const subscription = topic.subscription(subscriptionName);
       await subscription.delete();
-      this.logger.log(`[PubSub] Subscription ${subscriptionName} deleted successfully`);
+      this.logger.log(
+        `[PubSub] Subscription ${subscriptionName} deleted successfully`,
+      );
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NotFound')) {
-        this.logger.log(`[PubSub] Subscription ${subscriptionName} does not exist`);
+        this.logger.log(
+          `[PubSub] Subscription ${subscriptionName} does not exist`,
+        );
         return;
       }
-      this.logger.error(`[PubSub] Failed to delete subscription ${subscriptionName}:`, error.message);
+      this.logger.error(
+        `[PubSub] Failed to delete subscription ${subscriptionName}:`,
+        error.message,
+      );
       throw error;
     }
   }
@@ -462,7 +547,9 @@ export class PubSubService implements OnModuleInit {
   /**
    * Grant Gmail service account publisher permission on a topic
    */
-  private async grantGmailPublisherPermission(topicName: string): Promise<void> {
+  private async grantGmailPublisherPermission(
+    topicName: string,
+  ): Promise<void> {
     const gmailServiceAccount = 'gmail-api-push@system.gserviceaccount.com';
     const publisherRole = 'roles/pubsub.publisher';
     const serviceAccountMember = `serviceAccount:${gmailServiceAccount}`;
@@ -472,22 +559,28 @@ export class PubSubService implements OnModuleInit {
       const [policy] = await topic.iam.getPolicy();
 
       // Check if permission already exists
-      const hasPermission = policy.bindings.some(binding => {
+      const hasPermission = policy.bindings.some((binding) => {
         const isPublisher = binding.role === publisherRole;
-        const hasServiceAccount = binding.members?.some(member => 
-          member === serviceAccountMember || member.includes(gmailServiceAccount)
+        const hasServiceAccount = binding.members?.some(
+          (member) =>
+            member === serviceAccountMember ||
+            member.includes(gmailServiceAccount),
         );
         return isPublisher && hasServiceAccount;
       });
 
       if (hasPermission) {
-        this.logger.log(`[PubSub] Gmail service account already has publisher permission on topic ${topicName}`);
+        this.logger.log(
+          `[PubSub] Gmail service account already has publisher permission on topic ${topicName}`,
+        );
         return;
       }
 
       // Find existing publisher binding or create new one
-      let publisherBinding = policy.bindings.find(binding => binding.role === publisherRole);
-      
+      let publisherBinding = policy.bindings.find(
+        (binding) => binding.role === publisherRole,
+      );
+
       if (!publisherBinding) {
         // Create new binding
         publisherBinding = {
@@ -504,12 +597,16 @@ export class PubSubService implements OnModuleInit {
 
       // Set the updated policy
       await topic.iam.setPolicy(policy);
-      this.logger.log(`[PubSub] ✅ Granted ${publisherRole} permission to ${gmailServiceAccount} on topic ${topicName}`);
+      this.logger.log(
+        `[PubSub] ✅ Granted ${publisherRole} permission to ${gmailServiceAccount} on topic ${topicName}`,
+      );
     } catch (error: any) {
-      this.logger.error(`[PubSub] Failed to grant Gmail publisher permission: ${error.message}`);
+      this.logger.error(
+        `[PubSub] Failed to grant Gmail publisher permission: ${error.message}`,
+      );
       // Don't throw - topic creation succeeded, permission can be added manually
       this.logger.warn(
-        `[PubSub] ⚠️ Please manually grant ${publisherRole} to ${gmailServiceAccount} on topic ${topicName} in Google Cloud Console`
+        `[PubSub] ⚠️ Please manually grant ${publisherRole} to ${gmailServiceAccount} on topic ${topicName} in Google Cloud Console`,
       );
     }
   }
@@ -529,7 +626,7 @@ export class PubSubService implements OnModuleInit {
         return await operation();
       } catch (error: any) {
         lastError = error;
-        
+
         // Don't retry on AlreadyExists or NotFound errors
         if (error.code === 6 || error.code === 5) {
           throw error;
@@ -538,14 +635,16 @@ export class PubSubService implements OnModuleInit {
         if (attempt < maxRetries) {
           const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
           this.logger.warn(
-            `[PubSub] Retry ${attempt}/${maxRetries} for ${operationName} after ${delay}ms: ${error.message}`
+            `[PubSub] Retry ${attempt}/${maxRetries} for ${operationName} after ${delay}ms: ${error.message}`,
           );
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }
 
-    throw lastError || new Error(`Failed to ${operationName} after ${maxRetries} attempts`);
+    throw (
+      lastError ||
+      new Error(`Failed to ${operationName} after ${maxRetries} attempts`)
+    );
   }
 }
-

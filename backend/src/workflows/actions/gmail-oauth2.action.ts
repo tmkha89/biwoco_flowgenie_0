@@ -25,19 +25,30 @@ export class GmailOAuth2ActionHandler extends BaseActionHandler {
     super();
   }
 
-  async execute(context: ExecutionContext, config: Record<string, any>): Promise<any> {
+  async execute(
+    context: ExecutionContext,
+    config: Record<string, any>,
+  ): Promise<any> {
     const { to, subject, body, htmlBody, from } = config;
 
-    this.logger.log(`[GmailOAuth2] Starting email send for user ${context.userId}, to: ${to}`);
-    this.logger.debug(`[GmailOAuth2] Config: ${JSON.stringify({ to, subject, hasBody: !!body, hasHtmlBody: !!htmlBody, from })}`);
+    this.logger.log(
+      `[GmailOAuth2] Starting email send for user ${context.userId}, to: ${to}`,
+    );
+    this.logger.debug(
+      `[GmailOAuth2] Config: ${JSON.stringify({ to, subject, hasBody: !!body, hasHtmlBody: !!htmlBody, from })}`,
+    );
 
     // Validate required fields
     if (!to || !subject || (!body && !htmlBody)) {
-      throw new Error('Email action requires to, subject, and body or htmlBody');
+      throw new Error(
+        'Email action requires to, subject, and body or htmlBody',
+      );
     }
 
     // Get Google OAuth account for the user
-    this.logger.log(`[GmailOAuth2] Fetching OAuth account for user ${context.userId}`);
+    this.logger.log(
+      `[GmailOAuth2] Fetching OAuth account for user ${context.userId}`,
+    );
     const oauthAccount = await this.prismaService.oAuthAccount.findFirst({
       where: {
         userId: context.userId,
@@ -48,30 +59,47 @@ export class GmailOAuth2ActionHandler extends BaseActionHandler {
       },
     });
 
-    if (!oauthAccount || !oauthAccount.accessToken || !oauthAccount.refreshToken) {
-      this.logger.error(`[GmailOAuth2] No OAuth account found for user ${context.userId}`);
-      throw new Error('No Google OAuth account found for user. Please connect your Google account.');
+    if (
+      !oauthAccount ||
+      !oauthAccount.accessToken ||
+      !oauthAccount.refreshToken
+    ) {
+      this.logger.error(
+        `[GmailOAuth2] No OAuth account found for user ${context.userId}`,
+      );
+      throw new Error(
+        'No Google OAuth account found for user. Please connect your Google account.',
+      );
     }
 
     const userEmail = oauthAccount.user.email;
-    this.logger.log(`[GmailOAuth2] OAuth account found for provider user ${oauthAccount.providerUserId}`);
+    this.logger.log(
+      `[GmailOAuth2] OAuth account found for provider user ${oauthAccount.providerUserId}`,
+    );
     this.logger.log(`[GmailOAuth2] User email: ${userEmail}`);
-    this.logger.debug(`[GmailOAuth2] Token expires at: ${oauthAccount.expiresAt}`);
+    this.logger.debug(
+      `[GmailOAuth2] Token expires at: ${oauthAccount.expiresAt}`,
+    );
 
     // Get OAuth2 credentials
     const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
     const clientSecret = this.configService.get<string>('GOOGLE_CLIENT_SECRET');
 
     if (!clientId || !clientSecret) {
-      this.logger.error('[GmailOAuth2] Google OAuth credentials not configured');
+      this.logger.error(
+        '[GmailOAuth2] Google OAuth credentials not configured',
+      );
       throw new Error('Google OAuth credentials not configured');
     }
 
-    this.logger.debug(`[GmailOAuth2] OAuth credentials configured, clientId: ${clientId ? '✓' : '✗'}, clientSecret: ${clientSecret ? '✓' : '✗'}`);
+    this.logger.debug(
+      `[GmailOAuth2] OAuth credentials configured, clientId: ${clientId ? '✓' : '✗'}, clientSecret: ${clientSecret ? '✓' : '✗'}`,
+    );
 
     // Check if token is expired
     let accessToken = oauthAccount.accessToken;
-    const isTokenExpired = oauthAccount.expiresAt && oauthAccount.expiresAt < new Date();
+    const isTokenExpired =
+      oauthAccount.expiresAt && oauthAccount.expiresAt < new Date();
 
     if (isTokenExpired || !oauthAccount.expiresAt) {
       this.logger.log('[GmailOAuth2] Access token expired, refreshing...');
@@ -79,7 +107,9 @@ export class GmailOAuth2ActionHandler extends BaseActionHandler {
         oauthAccount.refreshToken,
       );
 
-      this.logger.log(`[GmailOAuth2] Token refreshed, expires in ${refreshedToken.expires_in}s`);
+      this.logger.log(
+        `[GmailOAuth2] Token refreshed, expires in ${refreshedToken.expires_in}s`,
+      );
 
       // Update the stored token
       await this.prismaService.oAuthAccount.update({
@@ -96,16 +126,22 @@ export class GmailOAuth2ActionHandler extends BaseActionHandler {
       this.logger.log('[GmailOAuth2] Access token is valid, no refresh needed');
     }
 
-    this.logger.log('[GmailOAuth2] Proceeding to send email with current OAuth credentials');
+    this.logger.log(
+      '[GmailOAuth2] Proceeding to send email with current OAuth credentials',
+    );
 
     // Resolve template variables
     const resolvedTo = this.resolveTemplate(to, context);
     const resolvedFrom = this.resolveTemplate(from || userEmail, context);
     const resolvedSubject = this.resolveTemplate(subject, context);
     const resolvedBody = body ? this.resolveTemplate(body, context) : undefined;
-    const resolvedHtmlBody = htmlBody ? this.resolveTemplate(htmlBody, context) : undefined;
+    const resolvedHtmlBody = htmlBody
+      ? this.resolveTemplate(htmlBody, context)
+      : undefined;
 
-    this.logger.debug(`[GmailOAuth2] Resolved email config: from="${resolvedFrom}", to="${resolvedTo}", subject="${resolvedSubject}"`);
+    this.logger.debug(
+      `[GmailOAuth2] Resolved email config: from="${resolvedFrom}", to="${resolvedTo}", subject="${resolvedSubject}"`,
+    );
 
     // Create Gmail transporter with OAuth2
     this.logger.log('[GmailOAuth2] Creating Gmail transporter with OAuth2');
@@ -135,13 +171,17 @@ export class GmailOAuth2ActionHandler extends BaseActionHandler {
           html: resolvedHtmlBody || resolvedBody,
         };
 
-        this.logger.log(`[GmailOAuth2] Sending email (attempt ${attempt}/3) to ${resolvedTo}`);
+        this.logger.log(
+          `[GmailOAuth2] Sending email (attempt ${attempt}/3) to ${resolvedTo}`,
+        );
         const info = await transporter.sendMail(mailOptions);
 
         this.logger.log(
           `[GmailOAuth2] Email sent successfully: ${info.messageId} (attempt ${attempt})`,
         );
-        this.logger.debug(`[GmailOAuth2] Response: accepted=${info.accepted?.length || 0}, rejected=${info.rejected?.length || 0}`);
+        this.logger.debug(
+          `[GmailOAuth2] Response: accepted=${info.accepted?.length || 0}, rejected=${info.rejected?.length || 0}`,
+        );
 
         return {
           messageId: info.messageId,
@@ -151,7 +191,9 @@ export class GmailOAuth2ActionHandler extends BaseActionHandler {
         };
       } catch (error: any) {
         lastError = error;
-        this.logger.error(`[GmailOAuth2] Email send attempt ${attempt} failed: ${error.message}`);
+        this.logger.error(
+          `[GmailOAuth2] Email send attempt ${attempt} failed: ${error.message}`,
+        );
 
         // If it's an authentication error and we haven't refreshed, try refreshing
         if (
@@ -159,25 +201,34 @@ export class GmailOAuth2ActionHandler extends BaseActionHandler {
           error.message?.includes('Invalid Credentials') &&
           !isTokenExpired
         ) {
-          this.logger.log('[GmailOAuth2] Authentication error detected, refreshing token...');
-          const refreshedToken = await this.googleOAuthService.refreshAccessToken(
-            oauthAccount.refreshToken,
+          this.logger.log(
+            '[GmailOAuth2] Authentication error detected, refreshing token...',
           );
+          const refreshedToken =
+            await this.googleOAuthService.refreshAccessToken(
+              oauthAccount.refreshToken,
+            );
 
-          this.logger.log(`[GmailOAuth2] Token refreshed, expires in ${refreshedToken.expires_in}s`);
+          this.logger.log(
+            `[GmailOAuth2] Token refreshed, expires in ${refreshedToken.expires_in}s`,
+          );
 
           await this.prismaService.oAuthAccount.update({
             where: { id: oauthAccount.id },
             data: {
               accessToken: refreshedToken.access_token,
-              expiresAt: new Date(Date.now() + refreshedToken.expires_in * 1000),
+              expiresAt: new Date(
+                Date.now() + refreshedToken.expires_in * 1000,
+              ),
             },
           });
 
           accessToken = refreshedToken.access_token;
 
           // Recreate transporter with new token
-          this.logger.log('[GmailOAuth2] Recreating transporter with new token');
+          this.logger.log(
+            '[GmailOAuth2] Recreating transporter with new token',
+          );
           transporter.close();
           Object.assign(
             transporter,
@@ -203,13 +254,19 @@ export class GmailOAuth2ActionHandler extends BaseActionHandler {
     }
 
     // All retries failed
-    this.logger.error(`[GmailOAuth2] Email send failed after 3 attempts: ${lastError?.message}`);
-    throw new Error(`Email send failed after 3 attempts: ${lastError?.message}`);
+    this.logger.error(
+      `[GmailOAuth2] Email send failed after 3 attempts: ${lastError?.message}`,
+    );
+    throw new Error(
+      `Email send failed after 3 attempts: ${lastError?.message}`,
+    );
   }
 
   validateConfig(config: Record<string, any>): boolean {
     if (!config.to || !config.subject || (!config.body && !config.htmlBody)) {
-      throw new Error('Email action requires to, subject, and body or htmlBody');
+      throw new Error(
+        'Email action requires to, subject, and body or htmlBody',
+      );
     }
     return true;
   }
@@ -237,4 +294,3 @@ export class GmailOAuth2ActionHandler extends BaseActionHandler {
     });
   }
 }
-

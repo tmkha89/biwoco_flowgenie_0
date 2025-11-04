@@ -30,4 +30,3 @@ export class ActionRegistry {
     return Array.from(this.handlers.keys());
   }
 }
-

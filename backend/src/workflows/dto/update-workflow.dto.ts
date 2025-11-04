@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsBoolean, IsArray, ValidateNested, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateTriggerDto } from './create-workflow.dto';
 import { CreateActionDto } from './create-workflow.dto';
@@ -27,4 +33,3 @@ export class UpdateWorkflowDto {
   @Type(() => CreateActionDto)
   actions?: CreateActionDto[];
 }
-

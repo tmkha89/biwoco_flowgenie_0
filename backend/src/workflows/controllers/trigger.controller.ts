@@ -1,4 +1,16 @@
-import { Controller, Post, Get, Body, Param, Req, Res, HttpCode, HttpStatus, Logger, Headers } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Req,
+  Res,
+  HttpCode,
+  HttpStatus,
+  Logger,
+  Headers,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
 import { WebhookTriggerHandler } from '../triggers/webhook.trigger';
 import { GoogleMailTriggerHandler } from '../triggers/google-mail.trigger';
@@ -76,7 +88,7 @@ export class TriggerController {
     try {
       // Convert headers to lowercase keys for consistency
       const normalizedHeaders: Record<string, string> = {};
-      Object.keys(headers).forEach(key => {
+      Object.keys(headers).forEach((key) => {
         normalizedHeaders[key.toLowerCase()] = headers[key];
       });
 
@@ -91,7 +103,10 @@ export class TriggerController {
         message: 'Webhook processed successfully',
       };
     } catch (error: any) {
-      this.logger.error(`Error processing webhook ${webhookId}:`, error.message);
+      this.logger.error(
+        `Error processing webhook ${webhookId}:`,
+        error.message,
+      );
       throw error;
     }
   }
@@ -154,7 +169,7 @@ export class TriggerController {
    *                   example: true
    *       400:
    *         description: Invalid notification format
-   * 
+   *
    * /api/triggers/gmail/pubsub:
    *   post:
    *     summary: Handle Gmail Pub/Sub push notification (alternative route)
@@ -198,67 +213,103 @@ export class TriggerController {
 
     try {
       // Validate Pub/Sub headers
-      const channelId = headers['x-goog-channel-id'] || headers['x-goog-channel-id'.toLowerCase()];
-      const resourceState = headers['x-goog-resource-state'] || headers['x-goog-resource-state'.toLowerCase()];
-      const resourceId = headers['x-goog-resource-id'] || headers['x-goog-resource-id'.toLowerCase()];
-      const resourceUri = headers['x-goog-resource-uri'] || headers['x-goog-resource-uri'.toLowerCase()];
+      const channelId =
+        headers['x-goog-channel-id'] ||
+        headers['x-goog-channel-id'.toLowerCase()];
+      const resourceState =
+        headers['x-goog-resource-state'] ||
+        headers['x-goog-resource-state'.toLowerCase()];
+      const resourceId =
+        headers['x-goog-resource-id'] ||
+        headers['x-goog-resource-id'.toLowerCase()];
+      const resourceUri =
+        headers['x-goog-resource-uri'] ||
+        headers['x-goog-resource-uri'.toLowerCase()];
 
-      this.logger.debug(`[PubSub] Headers: channelId=${channelId}, resourceState=${resourceState}, resourceId=${resourceId}`);
+      this.logger.debug(
+        `[PubSub] Headers: channelId=${channelId}, resourceState=${resourceState}, resourceId=${resourceId}`,
+      );
 
       // Handle subscription verification challenge
       if (body.challenge) {
-        this.logger.log('[PubSub] Received subscription verification challenge');
+        this.logger.log(
+          '[PubSub] Received subscription verification challenge',
+        );
         return { success: true };
       }
 
       // Google Pub/Sub sends notifications in a specific format
       // https://cloud.google.com/pubsub/docs/push#receiving_messages
       const message = body.message;
-      
+
       if (!message) {
-        this.logger.warn('[PubSub] Invalid Pub/Sub notification format: missing message');
+        this.logger.warn(
+          '[PubSub] Invalid Pub/Sub notification format: missing message',
+        );
         return { success: false };
       }
 
       // Decode base64-encoded data
       let notification: any;
       try {
-        const decodedData = Buffer.from(message.data, 'base64').toString('utf-8');
+        const decodedData = Buffer.from(message.data, 'base64').toString(
+          'utf-8',
+        );
         notification = JSON.parse(decodedData);
-        this.logger.log(`[PubSub] Decoded notification: ${JSON.stringify(notification)}`);
+        this.logger.log(
+          `[PubSub] Decoded notification: ${JSON.stringify(notification)}`,
+        );
       } catch (parseError: any) {
-        this.logger.error(`[PubSub] Failed to decode message data: ${parseError.message}`);
+        this.logger.error(
+          `[PubSub] Failed to decode message data: ${parseError.message}`,
+        );
         return { success: false };
       }
 
       // Extract channel ID from notification or headers
-      const notificationChannelId = notification.channelId || notification.emailAddress || channelId;
+      const notificationChannelId =
+        notification.channelId || notification.emailAddress || channelId;
 
       if (!notificationChannelId) {
-        this.logger.warn('[PubSub] No channel ID found in notification or headers');
+        this.logger.warn(
+          '[PubSub] No channel ID found in notification or headers',
+        );
         return { success: false };
       }
 
       // Validate resource state (Gmail sends 'exists' when there are changes)
-      if (resourceState && resourceState !== 'exists' && resourceState !== 'sync') {
-        this.logger.debug(`[PubSub] Resource state is '${resourceState}', ignoring notification`);
+      if (
+        resourceState &&
+        resourceState !== 'exists' &&
+        resourceState !== 'sync'
+      ) {
+        this.logger.debug(
+          `[PubSub] Resource state is '${resourceState}', ignoring notification`,
+        );
         return { success: true }; // Not an error, just not a change notification
       }
 
       // Handle the notification
-      this.logger.log(`[PubSub] Processing Gmail notification for channel: ${notificationChannelId}`);
-      await this.googleMailTriggerHandler.handlePubSubNotification(notificationChannelId, {
-        ...notification,
-        channelId: notificationChannelId,
-        resourceState,
-        resourceId,
-        resourceUri,
-      });
+      this.logger.log(
+        `[PubSub] Processing Gmail notification for channel: ${notificationChannelId}`,
+      );
+      await this.googleMailTriggerHandler.handlePubSubNotification(
+        notificationChannelId,
+        {
+          ...notification,
+          channelId: notificationChannelId,
+          resourceState,
+          resourceId,
+          resourceUri,
+        },
+      );
 
       this.logger.log(`[PubSub] ✅ Successfully processed Gmail notification`);
       return { success: true };
     } catch (error: any) {
-      this.logger.error(`[PubSub] ❌ Error processing Gmail Pub/Sub notification: ${error.message}`);
+      this.logger.error(
+        `[PubSub] ❌ Error processing Gmail Pub/Sub notification: ${error.message}`,
+      );
       this.logger.error(`[PubSub] Error stack: ${error.stack}`);
       // Return success to avoid retries for non-critical errors
       // Pub/Sub will retry if we return an error status
@@ -348,8 +399,6 @@ export class TriggerController {
   @HttpCode(HttpStatus.OK)
   async handleGmailPushAlternative(
     @Body() body: any,
-    @Req() req: Request,
-    @Headers() headers: Record<string, string>,
   ): Promise<{ success: boolean; message?: string }> {
     this.logger.log('Received Gmail push notification (alternative format)');
     this.logger.debug(`Gmail push payload: ${JSON.stringify(body)}`);
@@ -366,7 +415,9 @@ export class TriggerController {
         const historyId = body.historyId;
 
         if (!workflowId || !userId || !messageId) {
-          this.logger.warn('Missing required fields in Gmail push notification');
+          this.logger.warn(
+            'Missing required fields in Gmail push notification',
+          );
           return { success: false, message: 'Missing required fields' };
         }
 
@@ -387,7 +438,10 @@ export class TriggerController {
       this.logger.warn('Unrecognized Gmail push notification format');
       return { success: false, message: 'Unrecognized notification format' };
     } catch (error: any) {
-      this.logger.error('Error processing Gmail push notification:', error.message);
+      this.logger.error(
+        'Error processing Gmail push notification:',
+        error.message,
+      );
       return { success: false, message: error.message };
     }
   }

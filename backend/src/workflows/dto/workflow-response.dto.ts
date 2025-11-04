@@ -1,5 +1,8 @@
 import { Expose, Type } from 'class-transformer';
-import { WorkflowStatus, ExecutionStepStatus } from '../interfaces/workflow.interface';
+import {
+  WorkflowStatus,
+  ExecutionStepStatus,
+} from '../interfaces/workflow.interface';
 
 export class TriggerResponseDto {
   @Expose()
@@ -173,4 +176,3 @@ export class ExecutionResponseDto {
   @Type(() => WorkflowInfoDto)
   workflow?: WorkflowInfoDto;
 }
-

@@ -37,14 +37,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
-      
+
       if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;
       } else if (typeof exceptionResponse === 'object') {
         const responseObj = exceptionResponse as any;
         message = responseObj.message || exception.message;
         error = responseObj.error || exception.constructor.name;
-        
+
         // If validation errors, include details
         if (Array.isArray(responseObj.message)) {
           details = responseObj.message;
@@ -52,7 +52,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       } else {
         message = exception.message;
       }
-      
+
       error = error || exception.constructor.name;
     }
     // Handle Prisma errors
@@ -85,7 +85,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       message = exception.message || 'An unexpected error occurred';
       error = exception.constructor.name || 'InternalServerError';
-      
+
       // Log unexpected errors
       if (status === HttpStatus.INTERNAL_SERVER_ERROR) {
         this.logger.error(
@@ -121,9 +121,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json(errorResponse);
   }
 
-  private handlePrismaError(
-    exception: Prisma.PrismaClientKnownRequestError,
-  ): { status: number; message: string; error: string; details?: any } {
+  private handlePrismaError(exception: Prisma.PrismaClientKnownRequestError): {
+    status: number;
+    message: string;
+    error: string;
+    details?: any;
+  } {
     let status: number;
     let message: string;
     let error: string;
@@ -153,19 +156,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
       case 'P2003':
         status = HttpStatus.BAD_REQUEST;
-        message = 'The foreign key constraint failed. Related record does not exist.';
+        message =
+          'The foreign key constraint failed. Related record does not exist.';
         error = 'ForeignKeyConstraintViolation';
         break;
 
       case 'P2025':
         status = HttpStatus.NOT_FOUND;
-        message = 'The record you are trying to update or delete does not exist.';
+        message =
+          'The record you are trying to update or delete does not exist.';
         error = 'RecordNotFound';
         break;
 
       case 'P2014':
         status = HttpStatus.BAD_REQUEST;
-        message = 'The change you are trying to make would violate a required relation.';
+        message =
+          'The change you are trying to make would violate a required relation.';
         error = 'RequiredRelationViolation';
         break;
 
@@ -229,7 +235,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         status = HttpStatus.INTERNAL_SERVER_ERROR;
         message = 'A database error occurred.';
         error = 'DatabaseError';
-        this.logger.error(`Unhandled Prisma error code: ${exception.code}`, exception);
+        this.logger.error(
+          `Unhandled Prisma error code: ${exception.code}`,
+          exception,
+        );
     }
 
     return { status, message, error, details };
@@ -247,4 +256,3 @@ export class AllExceptionsFilter implements ExceptionFilter {
     return [message];
   }
 }
-

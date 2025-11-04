@@ -28,8 +28,10 @@ export class GmailAutoRegisterListener implements OnModuleInit {
   @OnEvent('google.account.connected')
   async handleGoogleAccountConnected(payload: { userId: number }) {
     const { userId } = payload;
-    this.logger.log(`[GmailTrigger] Received google.account.connected event for user ${userId}`);
-    
+    this.logger.log(
+      `[GmailTrigger] Received google.account.connected event for user ${userId}`,
+    );
+
     try {
       // Step 1: Create Pub/Sub topic if not exists
       if (this.pubSubService.isAvailable()) {
@@ -38,22 +40,37 @@ export class GmailAutoRegisterListener implements OnModuleInit {
         this.logger.log(`[PubSub] ✅ Topic created: ${topicPath}`);
 
         // Step 2: Create push subscription pointing to webhook endpoint
-        this.logger.log(`[PubSub] Creating push subscription for user ${userId}`);
-        const subscriptionPath = await this.pubSubService.createSubscription(userId, topicPath);
-        this.logger.log(`[PubSub] ✅ Subscription created: ${subscriptionPath}`);
+        this.logger.log(
+          `[PubSub] Creating push subscription for user ${userId}`,
+        );
+        const subscriptionPath = await this.pubSubService.createSubscription(
+          userId,
+          topicPath,
+        );
+        this.logger.log(
+          `[PubSub] ✅ Subscription created: ${subscriptionPath}`,
+        );
 
         // Step 3: Check Gmail push service account permissions
         await this.pubSubService.checkGmailPushPermissions(topicPath);
       } else {
-        this.logger.warn(`[PubSub] Pub/Sub not available, skipping topic/subscription creation. Set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS.`);
+        this.logger.warn(
+          `[PubSub] Pub/Sub not available, skipping topic/subscription creation. Set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS.`,
+        );
       }
 
       // Step 4: Auto-register Gmail triggers for all enabled workflows
-      this.logger.log(`[GmailTrigger] Auto-registering Gmail triggers for user ${userId}`);
+      this.logger.log(
+        `[GmailTrigger] Auto-registering Gmail triggers for user ${userId}`,
+      );
       await this.googleMailTriggerHandler.autoRegisterForUser(userId);
-      this.logger.log(`[GmailTrigger] ✅ Successfully auto-registered Gmail triggers for user ${userId}`);
+      this.logger.log(
+        `[GmailTrigger] ✅ Successfully auto-registered Gmail triggers for user ${userId}`,
+      );
     } catch (error: any) {
-      this.logger.error(`[GmailTrigger] ❌ Failed to setup Gmail trigger for user ${userId}: ${error.message}`);
+      this.logger.error(
+        `[GmailTrigger] ❌ Failed to setup Gmail trigger for user ${userId}: ${error.message}`,
+      );
       // Don't throw - we don't want to break the connection flow
     }
   }
@@ -65,12 +82,14 @@ export class GmailAutoRegisterListener implements OnModuleInit {
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async handleWatchRenewal() {
     this.logger.log('Running scheduled Gmail watch renewal task');
-    
+
     try {
       await this.googleMailTriggerHandler.renewExpiredWatches();
       this.logger.log('Gmail watch renewal task completed');
     } catch (error: any) {
-      this.logger.error(`Error in scheduled Gmail watch renewal: ${error.message}`);
+      this.logger.error(
+        `Error in scheduled Gmail watch renewal: ${error.message}`,
+      );
     }
   }
 
@@ -84,4 +103,3 @@ export class GmailAutoRegisterListener implements OnModuleInit {
   //   await this.googleMailTriggerHandler.renewExpiredWatches();
   // }
 }
-

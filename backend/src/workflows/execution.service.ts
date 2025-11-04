@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { NotFoundException, ExecutionException } from '../common/exceptions/custom-exceptions';
+import {
+  NotFoundException,
+  ExecutionException,
+} from '../common/exceptions/custom-exceptions';
 import { ExecutionRepository } from './repositories/execution.repository';
 import { ActionRegistry } from './actions/action.registry';
 import { ActionFactory } from './actions/action.factory';
@@ -7,8 +10,6 @@ import {
   ExecutionContext,
   ExecutionStepStatus,
   WorkflowStatus,
-  LoopContext,
-  ActionResult,
 } from './interfaces/workflow.interface';
 
 /**
@@ -40,17 +41,23 @@ export class ExecutionService {
     return execution;
   }
 
-  async findByWorkflowId(workflowId: number, options?: {
-    limit?: number;
-    offset?: number;
-  }) {
+  async findByWorkflowId(
+    workflowId: number,
+    options?: {
+      limit?: number;
+      offset?: number;
+    },
+  ) {
     return this.executionRepository.findByWorkflowId(workflowId, options);
   }
 
-  async findByUserId(userId: number, options?: {
-    limit?: number;
-    offset?: number;
-  }) {
+  async findByUserId(
+    userId: number,
+    options?: {
+      limit?: number;
+      offset?: number;
+    },
+  ) {
     return this.executionRepository.findByUserId(userId, options);
   }
 
@@ -65,7 +72,9 @@ export class ExecutionService {
     }
 
     if (execution.status !== WorkflowStatus.PENDING) {
-      this.logger.warn(`Execution ${executionId} is already ${execution.status}, skipping`);
+      this.logger.warn(
+        `Execution ${executionId} is already ${execution.status}, skipping`,
+      );
       return;
     }
 
@@ -83,7 +92,9 @@ export class ExecutionService {
       }
 
       // Find root actions (actions with no previous action or order 0)
-      const rootActions = execution.workflow.actions.filter((action) => !action.nextActionId && action.order === 0);
+      const rootActions = execution.workflow.actions.filter(
+        (action) => !action.nextActionId && action.order === 0,
+      );
 
       if (rootActions.length === 0) {
         throw new ExecutionException('No root actions found in workflow');
@@ -102,10 +113,20 @@ export class ExecutionService {
       // Execute workflow starting from root actions
       if (rootActions.length === 1) {
         // Single root action - sequential execution
-        await this.executeActionNode(rootActions[0].id, actionMap, context, executionId);
+        await this.executeActionNode(
+          rootActions[0].id,
+          actionMap,
+          context,
+          executionId,
+        );
       } else {
         // Multiple root actions - execute in parallel
-        await this.executeActionsParallel(rootActions.map((a) => a.id), actionMap, context, executionId);
+        await this.executeActionsParallel(
+          rootActions.map((a) => a.id),
+          actionMap,
+          context,
+          executionId,
+        );
       }
 
       // Mark execution as completed
@@ -117,7 +138,10 @@ export class ExecutionService {
 
       this.logger.log(`Execution ${executionId} completed successfully`);
     } catch (error: any) {
-      this.logger.error(`Execution ${executionId} failed: ${error.message}`, error.stack);
+      this.logger.error(
+        `Execution ${executionId} failed: ${error.message}`,
+        error.stack,
+      );
       await this.executionRepository.update(executionId, {
         status: WorkflowStatus.FAILED,
         error: error instanceof Error ? error.message : String(error),
@@ -142,11 +166,18 @@ export class ExecutionService {
     }
 
     // Check if step already exists, if not create it
-    let step = await this.findOrCreateExecutionStep(executionId, actionId, action.order, context);
+    const step = await this.findOrCreateExecutionStep(
+      executionId,
+      actionId,
+      action.order,
+      context,
+    );
 
     // Skip if already completed
     if (step.status === ExecutionStepStatus.COMPLETED) {
-      this.logger.debug(`Step ${step.id} (Action ${actionId}) already completed, skipping`);
+      this.logger.debug(
+        `Step ${step.id} (Action ${actionId}) already completed, skipping`,
+      );
       return;
     }
 
@@ -164,12 +195,18 @@ export class ExecutionService {
       // Execute action with retry logic
       let output: any;
       let retryCount = step.retryCount || 0;
-      const retryConfig = action.retryConfig as { attempts: number; backoff: { type: string; delay: number } } | null;
+      const retryConfig = action.retryConfig as {
+        attempts: number;
+        backoff: { type: string; delay: number };
+      } | null;
       const maxAttempts = retryConfig?.attempts || 3;
 
       while (retryCount < maxAttempts) {
         try {
-          output = await handler.execute(context, action.config as Record<string, any>);
+          output = await handler.execute(
+            context,
+            action.config as Record<string, any>,
+          );
           break; // Success, exit retry loop
         } catch (error: any) {
           retryCount++;
@@ -179,11 +216,14 @@ export class ExecutionService {
 
           // Wait before retry (exponential backoff)
           const delay = retryConfig?.backoff?.delay || 1000;
-          const backoffDelay = retryConfig?.backoff?.type === 'exponential'
-            ? delay * Math.pow(2, retryCount - 1)
-            : delay;
+          const backoffDelay =
+            retryConfig?.backoff?.type === 'exponential'
+              ? delay * Math.pow(2, retryCount - 1)
+              : delay;
 
-          this.logger.warn(`Action ${actionId} failed (attempt ${retryCount}/${maxAttempts}), retrying in ${backoffDelay}ms`);
+          this.logger.warn(
+            `Action ${actionId} failed (attempt ${retryCount}/${maxAttempts}), retrying in ${backoffDelay}ms`,
+          );
           await this.executionRepository.updateExecutionStep(step.id, {
             status: ExecutionStepStatus.PENDING,
             retryCount,
@@ -208,17 +248,40 @@ export class ExecutionService {
       // Handle action-specific logic
       if (action.type === 'conditional') {
         // Conditional action - branch based on result
-        await this.handleConditionalAction(action, output, actionMap, context, executionId);
+        await this.handleConditionalAction(
+          action,
+          output,
+          actionMap,
+          context,
+          executionId,
+        );
       } else if (action.type === 'parallel') {
         // Parallel action - execute sub-actions in parallel
-        await this.handleParallelAction(action, output, actionMap, context, executionId);
+        await this.handleParallelAction(
+          action,
+          output,
+          actionMap,
+          context,
+          executionId,
+        );
       } else if (action.type === 'loop') {
         // Loop action - iterate over items
-        await this.handleLoopAction(action, output, actionMap, context, executionId);
+        await this.handleLoopAction(
+          action,
+          output,
+          actionMap,
+          context,
+          executionId,
+        );
       } else {
         // Sequential action - execute next action if exists
         if (action.nextActionId) {
-          await this.executeActionNode(action.nextActionId, actionMap, context, executionId);
+          await this.executeActionNode(
+            action.nextActionId,
+            actionMap,
+            context,
+            executionId,
+          );
         }
       }
     } catch (error: any) {
@@ -254,7 +317,12 @@ export class ExecutionService {
     if (nextActionId) {
       const nextAction = actionMap.get(nextActionId);
       if (nextAction) {
-        await this.executeActionNode(nextActionId, actionMap, context, executionId);
+        await this.executeActionNode(
+          nextActionId,
+          actionMap,
+          context,
+          executionId,
+        );
       }
     }
   }
@@ -269,9 +337,16 @@ export class ExecutionService {
     context: ExecutionContext,
     executionId: number,
   ): Promise<void> {
-    const parallelActionIds = output.actionIds || output.parallelActionIds || [];
+    const parallelActionIds =
+      output.actionIds || output.parallelActionIds || [];
     if (parallelActionIds.length > 0) {
-      await this.executeActionsParallel(parallelActionIds, actionMap, context, executionId, output.stopOnFirstFailure);
+      await this.executeActionsParallel(
+        parallelActionIds,
+        actionMap,
+        context,
+        executionId,
+        output.stopOnFirstFailure,
+      );
     }
   }
 
@@ -299,7 +374,10 @@ export class ExecutionService {
 
     const loopAction = actionMap.get(loopActionId);
     if (!loopAction) {
-      throw new ExecutionException(`Loop action ${action.id} references non-existent action ${loopActionId}`, executionId);
+      throw new ExecutionException(
+        `Loop action ${action.id} references non-existent action ${loopActionId}`,
+        executionId,
+      );
     }
 
     // Execute loop body for each item
@@ -315,7 +393,12 @@ export class ExecutionService {
       };
 
       // Execute loop body action
-      await this.executeActionNode(loopActionId, actionMap, context, executionId);
+      await this.executeActionNode(
+        loopActionId,
+        actionMap,
+        context,
+        executionId,
+      );
 
       // Clear loop context after iteration
       delete context.loopContext;
@@ -340,7 +423,9 @@ export class ExecutionService {
         if (stopOnFirstFailure) {
           throw error;
         }
-        this.logger.error(`Parallel action ${actionId} failed: ${error.message}`);
+        this.logger.error(
+          `Parallel action ${actionId} failed: ${error.message}`,
+        );
         return { actionId, success: false, error };
       }
     });
@@ -359,7 +444,9 @@ export class ExecutionService {
   ): Promise<any> {
     // Try to find existing step
     const execution = await this.executionRepository.findById(executionId);
-    const existingStep = execution.executionSteps.find((step) => step.actionId === actionId);
+    const existingStep = execution.executionSteps.find(
+      (step) => step.actionId === actionId,
+    );
 
     if (existingStep) {
       return existingStep;
@@ -375,4 +462,3 @@ export class ExecutionService {
     });
   }
 }
-

@@ -25,22 +25,37 @@ export class EmailActionHandler extends BaseActionHandler {
     super();
   }
 
-  async execute(context: ExecutionContext, config: Record<string, any>): Promise<any> {
+  async execute(
+    context: ExecutionContext,
+    config: Record<string, any>,
+  ): Promise<any> {
     const { to, subject, body, htmlBody } = config;
 
     console.log(`📧 [EmailActionHandler] === SEND GOOGLE EMAIL START ===`);
-    console.log(`📧 [EmailActionHandler] User: ${context.userId}, Email: ${to}, Execution: ${context.executionId}, Workflow: ${context.workflowId}`);
-    this.logger.log(`Starting email send for user ${context.userId}, to: ${to}`);
-    this.logger.debug(`Config: ${JSON.stringify({ to, subject, hasBody: !!body, hasHtmlBody: !!htmlBody })}`);
+    console.log(
+      `📧 [EmailActionHandler] User: ${context.userId}, Email: ${to}, Execution: ${context.executionId}, Workflow: ${context.workflowId}`,
+    );
+    this.logger.log(
+      `Starting email send for user ${context.userId}, to: ${to}`,
+    );
+    this.logger.debug(
+      `Config: ${JSON.stringify({ to, subject, hasBody: !!body, hasHtmlBody: !!htmlBody })}`,
+    );
 
     // Validate required fields
     if (!to || !subject || (!body && !htmlBody)) {
-      console.error(`❌ [EmailActionHandler] Missing required fields: to=${!!to}, subject=${!!subject}, body=${!!body || !!htmlBody}`);
-      throw new Error('Email action requires to, subject, and body or htmlBody');
+      console.error(
+        `❌ [EmailActionHandler] Missing required fields: to=${!!to}, subject=${!!subject}, body=${!!body || !!htmlBody}`,
+      );
+      throw new Error(
+        'Email action requires to, subject, and body or htmlBody',
+      );
     }
 
     // Get Google OAuth account for the user
-    console.log(`🔐 [EmailActionHandler] Fetching Google OAuth account for user ${context.userId}`);
+    console.log(
+      `🔐 [EmailActionHandler] Fetching Google OAuth account for user ${context.userId}`,
+    );
     this.logger.log(`Fetching OAuth account for user ${context.userId}`);
     const oauthAccount = await this.prismaService.oAuthAccount.findFirst({
       where: {
@@ -52,15 +67,27 @@ export class EmailActionHandler extends BaseActionHandler {
       },
     });
 
-    if (!oauthAccount || !oauthAccount.accessToken || !oauthAccount.refreshToken) {
-      console.error(`❌ [EmailActionHandler] No Google OAuth account found for user ${context.userId}`);
+    if (
+      !oauthAccount ||
+      !oauthAccount.accessToken ||
+      !oauthAccount.refreshToken
+    ) {
+      console.error(
+        `❌ [EmailActionHandler] No Google OAuth account found for user ${context.userId}`,
+      );
       this.logger.error(`No OAuth account found for user ${context.userId}`);
-      throw new Error('No Google OAuth account found for user. Please connect your Google account.');
+      throw new Error(
+        'No Google OAuth account found for user. Please connect your Google account.',
+      );
     }
 
     const userEmail = oauthAccount.user.email;
-    console.log(`✅ [EmailActionHandler] OAuth account found - Provider User: ${oauthAccount.providerUserId}, Email: ${userEmail}`);
-    this.logger.log(`OAuth account found for provider user ${oauthAccount.providerUserId}`);
+    console.log(
+      `✅ [EmailActionHandler] OAuth account found - Provider User: ${oauthAccount.providerUserId}, Email: ${userEmail}`,
+    );
+    this.logger.log(
+      `OAuth account found for provider user ${oauthAccount.providerUserId}`,
+    );
     this.logger.log(`User email: ${userEmail}`);
     this.logger.debug(`Token expires at: ${oauthAccount.expiresAt}`);
 
@@ -74,21 +101,30 @@ export class EmailActionHandler extends BaseActionHandler {
       throw new Error('Google OAuth credentials not configured');
     }
 
-    this.logger.debug(`OAuth credentials configured, clientId: ${clientId ? '✓' : '✗'}, clientSecret: ${clientSecret ? '✓' : '✗'}`);
+    this.logger.debug(
+      `OAuth credentials configured, clientId: ${clientId ? '✓' : '✗'}, clientSecret: ${clientSecret ? '✓' : '✗'}`,
+    );
 
     // Check if token is expired
     let accessToken = oauthAccount.accessToken;
-    const isTokenExpired = oauthAccount.expiresAt && oauthAccount.expiresAt < new Date();
+    const isTokenExpired =
+      oauthAccount.expiresAt && oauthAccount.expiresAt < new Date();
 
     if (isTokenExpired || !oauthAccount.expiresAt) {
-      console.log(`🔄 [EmailActionHandler] Access token expired, refreshing...`);
+      console.log(
+        `🔄 [EmailActionHandler] Access token expired, refreshing...`,
+      );
       this.logger.log('Access token expired, refreshing...');
       const refreshedToken = await this.googleOAuthService.refreshAccessToken(
         oauthAccount.refreshToken,
       );
 
-      console.log(`✅ [EmailActionHandler] Token refreshed successfully, expires in ${refreshedToken.expires_in}s`);
-      this.logger.log(`Token refreshed, expires in ${refreshedToken.expires_in}s`);
+      console.log(
+        `✅ [EmailActionHandler] Token refreshed successfully, expires in ${refreshedToken.expires_in}s`,
+      );
+      this.logger.log(
+        `Token refreshed, expires in ${refreshedToken.expires_in}s`,
+      );
 
       // Update the stored token
       await this.prismaService.oAuthAccount.update({
@@ -102,11 +138,15 @@ export class EmailActionHandler extends BaseActionHandler {
       accessToken = refreshedToken.access_token;
       this.logger.log('Access token refreshed successfully');
     } else {
-      console.log(`✅ [EmailActionHandler] Access token is valid, no refresh needed`);
+      console.log(
+        `✅ [EmailActionHandler] Access token is valid, no refresh needed`,
+      );
       this.logger.log('Access token is valid, no refresh needed');
     }
 
-    console.log(`✅ [EmailActionHandler] Proceeding to send email with current OAuth credentials`);
+    console.log(
+      `✅ [EmailActionHandler] Proceeding to send email with current OAuth credentials`,
+    );
     this.logger.log('Proceeding to send email with current OAuth credentials');
 
     // Resolve template variables
@@ -114,13 +154,21 @@ export class EmailActionHandler extends BaseActionHandler {
     const resolvedFrom = userEmail;
     const resolvedSubject = this.resolveTemplate(subject, context);
     const resolvedBody = body ? this.resolveTemplate(body, context) : undefined;
-    const resolvedHtmlBody = htmlBody ? this.resolveTemplate(htmlBody, context) : undefined;
+    const resolvedHtmlBody = htmlBody
+      ? this.resolveTemplate(htmlBody, context)
+      : undefined;
 
-    console.log(`📝 [EmailActionHandler] Email config - From: ${resolvedFrom}, To: ${resolvedTo}, Subject: ${resolvedSubject}`);
-    this.logger.debug(`Resolved email config: from="${resolvedFrom}", to="${resolvedTo}", subject="${resolvedSubject}"`);
+    console.log(
+      `📝 [EmailActionHandler] Email config - From: ${resolvedFrom}, To: ${resolvedTo}, Subject: ${resolvedSubject}`,
+    );
+    this.logger.debug(
+      `Resolved email config: from="${resolvedFrom}", to="${resolvedTo}", subject="${resolvedSubject}"`,
+    );
 
     // Create Gmail transporter with OAuth2
-    console.log(`📧 [EmailActionHandler] Creating Gmail transporter with OAuth2`);
+    console.log(
+      `📧 [EmailActionHandler] Creating Gmail transporter with OAuth2`,
+    );
     this.logger.log('Creating Gmail transporter with OAuth2');
     const transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -134,7 +182,7 @@ export class EmailActionHandler extends BaseActionHandler {
         clientSecret,
         refreshToken: oauthAccount.refreshToken,
         accessToken,
-        accessUrl
+        accessUrl,
       },
     } as any);
 
@@ -153,15 +201,27 @@ export class EmailActionHandler extends BaseActionHandler {
           html: resolvedHtmlBody || resolvedBody,
         };
 
-        console.log(`📤 [EmailActionHandler] Sending email (attempt ${attempt}/3) - From: ${resolvedFrom} → To: ${resolvedTo}`);
-        this.logger.log(`Sending email (attempt ${attempt}/3) to ${resolvedTo}`);
+        console.log(
+          `📤 [EmailActionHandler] Sending email (attempt ${attempt}/3) - From: ${resolvedFrom} → To: ${resolvedTo}`,
+        );
+        this.logger.log(
+          `Sending email (attempt ${attempt}/3) to ${resolvedTo}`,
+        );
         const info = await transporter.sendMail(mailOptions);
 
-        console.log(`✅ [EmailActionHandler] Email sent successfully! Message ID: ${info.messageId}`);
-        this.logger.log(`Email sent successfully: ${info.messageId} (attempt ${attempt})`);
-        this.logger.debug(`Response: accepted=${info.accepted?.length || 0}, rejected=${info.rejected?.length || 0}`);
+        console.log(
+          `✅ [EmailActionHandler] Email sent successfully! Message ID: ${info.messageId}`,
+        );
+        this.logger.log(
+          `Email sent successfully: ${info.messageId} (attempt ${attempt})`,
+        );
+        this.logger.debug(
+          `Response: accepted=${info.accepted?.length || 0}, rejected=${info.rejected?.length || 0}`,
+        );
 
-        console.log(`📧 [EmailActionHandler] === SEND GOOGLE EMAIL SUCCESS ===`);
+        console.log(
+          `📧 [EmailActionHandler] === SEND GOOGLE EMAIL SUCCESS ===`,
+        );
         return {
           messageId: info.messageId,
           accepted: info.accepted,
@@ -170,8 +230,12 @@ export class EmailActionHandler extends BaseActionHandler {
         };
       } catch (error: any) {
         lastError = error;
-        console.error(`❌ [EmailActionHandler] Email send attempt ${attempt}/3 failed: ${error.message}`);
-        this.logger.error(`Email send attempt ${attempt} failed: ${error.message}`);
+        console.error(
+          `❌ [EmailActionHandler] Email send attempt ${attempt}/3 failed: ${error.message}`,
+        );
+        this.logger.error(
+          `Email send attempt ${attempt} failed: ${error.message}`,
+        );
 
         // If it's an authentication error and we haven't refreshed, try refreshing
         if (
@@ -180,17 +244,22 @@ export class EmailActionHandler extends BaseActionHandler {
           !isTokenExpired
         ) {
           this.logger.log('Authentication error detected, refreshing token...');
-          const refreshedToken = await this.googleOAuthService.refreshAccessToken(
-            oauthAccount.refreshToken,
-          );
+          const refreshedToken =
+            await this.googleOAuthService.refreshAccessToken(
+              oauthAccount.refreshToken,
+            );
 
-          this.logger.log(`Token refreshed, expires in ${refreshedToken.expires_in}s`);
+          this.logger.log(
+            `Token refreshed, expires in ${refreshedToken.expires_in}s`,
+          );
 
           await this.prismaService.oAuthAccount.update({
             where: { id: oauthAccount.id },
             data: {
               accessToken: refreshedToken.access_token,
-              expiresAt: new Date(Date.now() + refreshedToken.expires_in * 1000),
+              expiresAt: new Date(
+                Date.now() + refreshedToken.expires_in * 1000,
+              ),
             },
           });
 
@@ -213,7 +282,7 @@ export class EmailActionHandler extends BaseActionHandler {
                 clientSecret,
                 refreshToken: oauthAccount.refreshToken,
                 accessToken,
-                accessUrl
+                accessUrl,
               },
             } as any),
           );
@@ -228,14 +297,22 @@ export class EmailActionHandler extends BaseActionHandler {
 
     // All retries failed
     console.error(`❌ [EmailActionHandler] === SEND GOOGLE EMAIL FAILED ===`);
-    console.error(`❌ [EmailActionHandler] Failed after 3 attempts: ${lastError?.message}`);
-    this.logger.error(`Email send failed after 3 attempts: ${lastError?.message}`);
-    throw new Error(`Email send failed after 3 attempts: ${lastError?.message}`);
+    console.error(
+      `❌ [EmailActionHandler] Failed after 3 attempts: ${lastError?.message}`,
+    );
+    this.logger.error(
+      `Email send failed after 3 attempts: ${lastError?.message}`,
+    );
+    throw new Error(
+      `Email send failed after 3 attempts: ${lastError?.message}`,
+    );
   }
 
   validateConfig(config: Record<string, any>): boolean {
     if (!config.to || !config.subject || (!config.body && !config.htmlBody)) {
-      throw new Error('Email action requires to, subject, and body or htmlBody');
+      throw new Error(
+        'Email action requires to, subject, and body or htmlBody',
+      );
     }
     return true;
   }
@@ -263,4 +340,3 @@ export class EmailActionHandler extends BaseActionHandler {
     });
   }
 }
-

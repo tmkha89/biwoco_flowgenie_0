@@ -13,7 +13,10 @@ export class ConditionalActionHandler extends BaseActionHandler {
   readonly type = 'conditional';
   readonly name = 'Conditional';
 
-  async execute(context: ExecutionContext, config: Record<string, any>): Promise<any> {
+  async execute(
+    context: ExecutionContext,
+    config: Record<string, any>,
+  ): Promise<any> {
     const { condition, trueActionId, falseActionId } = config;
 
     if (!condition) {
@@ -41,7 +44,10 @@ export class ConditionalActionHandler extends BaseActionHandler {
    * Evaluate a condition expression
    * Supports: {{field}} == value, {{field}} != value, {{field}} > value, etc.
    */
-  private evaluateCondition(condition: string | Record<string, any>, context: ExecutionContext): boolean {
+  private evaluateCondition(
+    condition: string | Record<string, any>,
+    context: ExecutionContext,
+  ): boolean {
     // If condition is a string, parse it
     if (typeof condition === 'string') {
       return this.evaluateStringCondition(condition, context);
@@ -59,7 +65,10 @@ export class ConditionalActionHandler extends BaseActionHandler {
    * Evaluate string-based condition
    * Format: "{{step.1.output.status}} == 'success'"
    */
-  private evaluateStringCondition(condition: string, context: ExecutionContext): boolean {
+  private evaluateStringCondition(
+    condition: string,
+    context: ExecutionContext,
+  ): boolean {
     const resolvedCondition = this.resolveTemplate(condition, context);
 
     // Check for comparison operators
@@ -99,7 +108,10 @@ export class ConditionalActionHandler extends BaseActionHandler {
    * Evaluate object-based condition
    * Format: { field: "{{step.1.output.status}}", operator: "==", value: "success" }
    */
-  private evaluateObjectCondition(condition: Record<string, any>, context: ExecutionContext): boolean {
+  private evaluateObjectCondition(
+    condition: Record<string, any>,
+    context: ExecutionContext,
+  ): boolean {
     const { field, operator = '==', value } = condition;
 
     if (!field) {
@@ -107,15 +119,26 @@ export class ConditionalActionHandler extends BaseActionHandler {
     }
 
     const resolvedField = this.resolveTemplate(String(field), context);
-    const resolvedValue = value !== undefined ? this.resolveTemplate(String(value), context) : undefined;
+    const resolvedValue =
+      value !== undefined
+        ? this.resolveTemplate(String(value), context)
+        : undefined;
 
-    return this.compareValues(String(resolvedField), String(resolvedValue || ''), operator);
+    return this.compareValues(
+      String(resolvedField),
+      String(resolvedValue || ''),
+      operator,
+    );
   }
 
   /**
    * Compare two values
    */
-  private compareValues(left: string, right: string, operator: string): boolean {
+  private compareValues(
+    left: string,
+    right: string,
+    operator: string,
+  ): boolean {
     const leftVal = this.parseValue(left);
     const rightVal = this.parseValue(right);
 
@@ -149,7 +172,10 @@ export class ConditionalActionHandler extends BaseActionHandler {
   private parseValue(value: string): any {
     if (!value) return value;
     value = String(value).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
       return value.slice(1, -1);
     }
     if (value === 'true') return true;
@@ -181,4 +207,3 @@ export class ConditionalActionHandler extends BaseActionHandler {
     });
   }
 }
-

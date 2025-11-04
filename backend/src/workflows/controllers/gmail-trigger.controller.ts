@@ -1,4 +1,13 @@
-import { Controller, Post, Body, Req, Headers, HttpCode, HttpStatus, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Req,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { GoogleMailTriggerHandler } from '../triggers/google-mail.trigger';
 
@@ -11,12 +20,14 @@ import { GoogleMailTriggerHandler } from '../triggers/google-mail.trigger';
 export class GmailTriggerController {
   private readonly logger = new Logger(GmailTriggerController.name);
 
-  constructor(private readonly googleMailTriggerHandler: GoogleMailTriggerHandler) {}
+  constructor(
+    private readonly googleMailTriggerHandler: GoogleMailTriggerHandler,
+  ) {}
 
   /**
    * Gmail Push Notification Webhook
    * POST /api/triggers/Google Mail
-   * 
+   *
    * This endpoint receives push notifications from Google Gmail API
    * The path uses a space as requested (URL-encoded as %20 in HTTP)
    */
@@ -27,12 +38,15 @@ export class GmailTriggerController {
     @Req() req: Request,
     @Headers() headers: Record<string, string>,
   ): Promise<{ success: boolean; message?: string }> {
-    this.logger.log('Received Gmail push notification at /api/triggers/Google Mail');
+    this.logger.log(
+      'Received Gmail push notification at /api/triggers/Google Mail',
+    );
     this.logger.debug(`Gmail push payload: ${JSON.stringify(body)}`);
 
     try {
       // Validate webhook signature/token if provided
-      const authToken = headers['authorization'] || headers['x-google-auth-token'];
+      const authToken =
+        headers['authorization'] || headers['x-google-auth-token'];
       if (authToken) {
         // Add token validation logic here if needed
         this.logger.debug('Webhook authentication token received');
@@ -42,22 +56,29 @@ export class GmailTriggerController {
       // Google sends notifications in Pub/Sub format
       if (body.message && body.message.data) {
         // Decode base64-encoded data
-        const decodedData = Buffer.from(body.message.data, 'base64').toString('utf-8');
+        const decodedData = Buffer.from(body.message.data, 'base64').toString(
+          'utf-8',
+        );
         const notification = JSON.parse(decodedData);
-        
-        this.logger.log(`Processing Gmail push notification: ${JSON.stringify(notification)}`);
+
+        this.logger.log(
+          `Processing Gmail push notification: ${JSON.stringify(notification)}`,
+        );
 
         // Extract channel ID and workflow information
         const channelId = notification.channelId || notification.emailAddress;
-        
+
         if (!channelId) {
           this.logger.warn('No channel ID found in Gmail push notification');
           return { success: false, message: 'No channel ID found' };
         }
 
         // Delegate to existing Pub/Sub handler
-        await this.googleMailTriggerHandler.handlePubSubNotification(channelId, notification);
-        
+        await this.googleMailTriggerHandler.handlePubSubNotification(
+          channelId,
+          notification,
+        );
+
         return { success: true, message: 'Gmail push notification processed' };
       }
 
@@ -72,7 +93,9 @@ export class GmailTriggerController {
         const historyId = body.historyId;
 
         if (!workflowId || !userId || !messageId) {
-          this.logger.warn('Missing required fields in Gmail push notification');
+          this.logger.warn(
+            'Missing required fields in Gmail push notification',
+          );
           return { success: false, message: 'Missing required fields' };
         }
 
@@ -99,9 +122,11 @@ export class GmailTriggerController {
       this.logger.warn('Unrecognized Gmail push notification format');
       return { success: false, message: 'Unrecognized notification format' };
     } catch (error: any) {
-      this.logger.error('Error processing Gmail push notification:', error.message);
+      this.logger.error(
+        'Error processing Gmail push notification:',
+        error.message,
+      );
       return { success: false, message: error.message };
     }
   }
 }
-

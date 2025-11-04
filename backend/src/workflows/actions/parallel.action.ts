@@ -13,11 +13,16 @@ export class ParallelActionHandler extends BaseActionHandler {
   readonly type = 'parallel';
   readonly name = 'Parallel';
 
-  async execute(context: ExecutionContext, config: Record<string, any>): Promise<any> {
+  async execute(
+    context: ExecutionContext,
+    config: Record<string, any>,
+  ): Promise<any> {
     const { actionIds, waitForAll = true, stopOnFirstFailure = false } = config;
 
     if (!actionIds || !Array.isArray(actionIds) || actionIds.length === 0) {
-      throw new Error('Parallel action requires a non-empty array of actionIds');
+      throw new Error(
+        'Parallel action requires a non-empty array of actionIds',
+      );
     }
 
     // Return metadata for the execution service to handle parallel execution
@@ -30,10 +35,15 @@ export class ParallelActionHandler extends BaseActionHandler {
   }
 
   validateConfig(config: Record<string, any>): boolean {
-    if (!config.actionIds || !Array.isArray(config.actionIds) || config.actionIds.length === 0) {
-      throw new Error('Parallel action requires a non-empty array of actionIds');
+    if (
+      !config.actionIds ||
+      !Array.isArray(config.actionIds) ||
+      config.actionIds.length === 0
+    ) {
+      throw new Error(
+        'Parallel action requires a non-empty array of actionIds',
+      );
     }
     return true;
   }
 }
-
