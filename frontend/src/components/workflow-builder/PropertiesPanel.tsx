@@ -568,49 +568,6 @@ const PropertiesPanel = () => {
         </div>
       )}
 
-      {/* Conditional Config */}
-      {selectedNode.data.type === ActionType.CONDITIONAL && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Condition</label>
-          <textarea
-            value={selectedNode.data.config.condition || ''}
-            onChange={(e) => handleConfigChange('condition', e.target.value)}
-            className="w-full border border-gray-300 rounded px-3 py-2 font-mono text-xs"
-            rows={4}
-            placeholder="{{step.1.output.data.status}} == 'active'"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Connect edges to set true/false branches. First edge = true, second edge = false
-          </p>
-        </div>
-      )}
-
-      {/* Loop Config */}
-      {selectedNode.data.type === ActionType.LOOP && (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Items Path</label>
-            <input
-              type="text"
-              value={selectedNode.data.config.itemsPath || ''}
-              onChange={(e) => handleConfigChange('itemsPath', e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2"
-              placeholder="step.1.output.data.items"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Item Variable</label>
-            <input
-              type="text"
-              value={selectedNode.data.config.itemVariable || 'item'}
-              onChange={(e) => handleConfigChange('itemVariable', e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2"
-            />
-          </div>
-          <p className="text-xs text-gray-500">Connect edge to set loop body action</p>
-        </div>
-      )}
-
       {/* Parallel Config */}
       {selectedNode.data.type === ActionType.PARALLEL && (
         <div className="space-y-4">

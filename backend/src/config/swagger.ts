@@ -488,6 +488,10 @@ const swaggerOptions: swaggerJsdoc.Options = {
         name: 'Workflows',
         description: 'Workflow management and execution endpoints',
       },
+      {
+        name: 'Triggers',
+        description: 'Trigger endpoints for webhooks and Gmail Pub/Sub notifications',
+      },
     ],
   },
   apis: [

@@ -34,6 +34,9 @@ export class PubSubService implements OnModuleInit {
     this.logger.log(`[PubSub] Credentials path: ${this.credentialsPath || 'NOT SET'}`);
     this.logger.log(`[PubSub] Public API URL: ${this.publicApiUrl}`);
 
+    // Validate PUBLIC_API_URL is publicly accessible
+    this.validatePublicApiUrl();
+
     // Initialize Pub/Sub client
     if (this.projectId) {
       // Only initialize if credentials are explicitly provided
@@ -64,6 +67,82 @@ export class PubSubService implements OnModuleInit {
   }
 
   /**
+   * Validate push endpoint is publicly accessible
+   * Throws error if localhost or private IP is detected
+   */
+  private validatePushEndpoint(pushEndpoint: string): void {
+    const url = pushEndpoint.toLowerCase();
+    
+    // Check for localhost, 127.0.0.1, or private IP ranges
+    const isLocalhost = url.includes('localhost') || 
+                       url.includes('127.0.0.1') || 
+                       url.includes('0.0.0.0') ||
+                       url.startsWith('http://192.168.') ||
+                       url.startsWith('http://10.') ||
+                       url.match(/^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\./);
+
+    if (isLocalhost) {
+      const port = this.publicApiUrl.match(/:(\d+)/)?.[1] || '3000';
+      throw new Error(
+        `Invalid push endpoint: ${pushEndpoint}\n\n` +
+        `Google Cloud Pub/Sub cannot reach localhost URLs. Your webhook endpoint will not work!\n\n` +
+        `✅ SOLUTION: Use a tunneling service (e.g., ngrok) to expose your local server:\n` +
+        `   1. Install ngrok: https://ngrok.com/download\n` +
+        `   2. Start your Nest.js server on port ${port}\n` +
+        `   3. Run: ngrok http ${port}\n` +
+        `   4. Copy the HTTPS URL (e.g., https://aBcD1234.ngrok.io)\n` +
+        `   5. Set PUBLIC_API_URL=https://aBcD1234.ngrok.io\n` +
+        `   6. Restart your Nest.js server\n\n` +
+        `Note: Google Cloud requires HTTPS endpoints for push subscriptions.`
+      );
+    }
+
+    if (!url.startsWith('https://')) {
+      this.logger.warn(
+        `[PubSub] ⚠️ Push endpoint is not using HTTPS: ${pushEndpoint}\n` +
+        `Google Cloud Pub/Sub requires HTTPS endpoints for push subscriptions in production.`
+      );
+    }
+  }
+
+  /**
+   * Validate PUBLIC_API_URL is publicly accessible
+   * Warns if localhost or private IP is detected
+   */
+  private validatePublicApiUrl(): void {
+    const url = this.publicApiUrl.toLowerCase();
+    
+    // Check for localhost, 127.0.0.1, or private IP ranges
+    const isLocalhost = url.includes('localhost') || 
+                       url.includes('127.0.0.1') || 
+                       url.includes('0.0.0.0') ||
+                       url.startsWith('http://192.168.') ||
+                       url.startsWith('http://10.') ||
+                       url.match(/^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\./);
+
+    if (isLocalhost) {
+      this.logger.error(
+        `[PubSub] ⚠️ WARNING: PUBLIC_API_URL is set to a localhost/private address: ${this.publicApiUrl}\n` +
+        `Google Cloud Pub/Sub cannot reach localhost URLs. Your webhook endpoint will not work!\n\n` +
+        `✅ SOLUTION: Use a tunneling service (e.g., ngrok) to expose your local server:\n` +
+        `   1. Install ngrok: https://ngrok.com/download\n` +
+        `   2. Start your Nest.js server on port ${this.publicApiUrl.match(/:(\d+)/)?.[1] || '3000'}\n` +
+        `   3. Run: ngrok http ${this.publicApiUrl.match(/:(\d+)/)?.[1] || '3000'}\n` +
+        `   4. Copy the HTTPS URL (e.g., https://aBcD1234.ngrok.io)\n` +
+        `   5. Set PUBLIC_API_URL=https://aBcD1234.ngrok.io\n` +
+        `   6. Restart your Nest.js server\n\n` +
+        `Note: Google Cloud requires HTTPS endpoints for push subscriptions.`
+      );
+    } else if (!url.startsWith('https://')) {
+      this.logger.warn(
+        `[PubSub] ⚠️ PUBLIC_API_URL is not using HTTPS: ${this.publicApiUrl}\n` +
+        `Google Cloud Pub/Sub requires HTTPS endpoints for push subscriptions in production.\n` +
+        `Consider using HTTPS (e.g., via ngrok or a reverse proxy).`
+      );
+    }
+  }
+
+  /**
    * Check if Pub/Sub is available
    */
   isAvailable(): boolean {
@@ -88,17 +167,25 @@ export class PubSubService implements OnModuleInit {
   }
 
   /**
-   * Get subscription name for a user
+   * Get subscription name using current timestamp
    */
-  getSubscriptionName(userId: number): string {
-    return `flowgenie-gmail-sub-${userId}`;
+  getSubscriptionName(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const timestamp = `${year}${month}${day}${hours}${minutes}${seconds}`;
+    return `flowgenie-gmail-sub-${timestamp}`;
   }
 
   /**
    * Get full subscription path
    */
-  getSubscriptionPath(userId: number): string {
-    return `projects/${this.projectId}/subscriptions/${this.getSubscriptionName(userId)}`;
+  getSubscriptionPath(): string {
+    return `projects/${this.projectId}/subscriptions/${this.getSubscriptionName()}`;
   }
 
   /**
@@ -164,9 +251,12 @@ export class PubSubService implements OnModuleInit {
       throw new Error('Pub/Sub is not available. Please set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS');
     }
 
-    const subscriptionName = this.getSubscriptionName(userId);
-    const subscriptionPath = this.getSubscriptionPath(userId);
+    const subscriptionName = this.getSubscriptionName();
+    const subscriptionPath = this.getSubscriptionPath();
     const pushEndpoint = `${this.publicApiUrl}/api/triggers/gmail`;
+
+    // Validate push endpoint is publicly accessible before creating subscription
+    this.validatePushEndpoint(pushEndpoint);
 
     this.logger.log(`[PubSub] Creating subscription: ${subscriptionName} for user ${userId}`);
     this.logger.log(`[PubSub] Push endpoint: ${pushEndpoint}`);
@@ -351,7 +441,7 @@ export class PubSubService implements OnModuleInit {
       return;
     }
 
-    const subscriptionName = this.getSubscriptionName(userId);
+    const subscriptionName = this.getSubscriptionName();
     this.logger.log(`[PubSub] Deleting subscription: ${subscriptionName} for user ${userId}`);
 
     try {

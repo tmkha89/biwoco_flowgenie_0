@@ -341,34 +341,79 @@ export class GoogleMailTriggerHandler implements ITriggerHandler {
 
       this.logger.log(`[GmailTrigger] Found ${workflowIds.length} Gmail workflows for user ${userId}`);
     } else {
-      // Fallback: Try to find by channel ID (for backward compatibility)
-      this.logger.warn(`[GmailTrigger] No user ID found, falling back to channel ID lookup`);
+      // Fallback: Check if channelId is an email address and look up user by email
+      this.logger.warn(`[GmailTrigger] No user ID found, checking if channel ID is an email address`);
       
-      for (const [workflow, watchInfo] of this.watchedWorkflows.entries()) {
-        if (watchInfo.channelId === channelId) {
-          workflowIds.push(workflow);
-          break;
-        }
-      }
-
-      // If not found in memory, search in database
-      if (workflowIds.length === 0) {
-        const triggers = await this.prisma.trigger.findMany({
-          where: {
-            type: TriggerType.GOOGLE_MAIL,
+      // Check if channelId looks like an email address
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (emailRegex.test(channelId)) {
+        this.logger.log(`[GmailTrigger] Channel ID appears to be an email address: ${channelId}`);
+        
+        // Find user by email address
+        const user = await this.prisma.user.findUnique({
+          where: { email: channelId },
+          include: {
+            oauthAccounts: {
+              where: {
+                provider: 'google',
+              },
+            },
           },
-          include: { workflow: true },
         });
 
-        for (const trigger of triggers) {
-          const config = trigger.config as any;
-          if (config.watchChannelId === channelId) {
-            workflowIds.push(trigger.workflowId);
-            // Update memory cache
-            this.watchedWorkflows.set(trigger.workflowId, {
-              channelId: config.watchChannelId,
-              topicName: config.topicName,
-            });
+        if (user && user.oauthAccounts.length > 0) {
+          userId = user.id;
+          this.logger.log(`[GmailTrigger] Found user ID ${userId} for email ${channelId}`);
+          
+          // Find all enabled workflows with Gmail trigger for this user
+          const workflows = await this.prisma.workflow.findMany({
+            where: {
+              userId,
+              enabled: true,
+            },
+            include: {
+              trigger: true,
+            },
+          });
+
+          workflowIds = workflows
+            .filter(w => w.trigger && w.trigger.type === TriggerType.GOOGLE_MAIL)
+            .map(w => w.id);
+
+          this.logger.log(`[GmailTrigger] Found ${workflowIds.length} Gmail workflows for user ${userId} (from email ${channelId})`);
+        } else {
+          this.logger.warn(`[GmailTrigger] No user or OAuth account found for email ${channelId}`);
+        }
+      } else {
+        // Fallback: Try to find by channel ID (for backward compatibility)
+        this.logger.warn(`[GmailTrigger] Channel ID is not an email, falling back to channel ID lookup`);
+        
+        for (const [workflow, watchInfo] of this.watchedWorkflows.entries()) {
+          if (watchInfo.channelId === channelId) {
+            workflowIds.push(workflow);
+            break;
+          }
+        }
+
+        // If not found in memory, search in database
+        if (workflowIds.length === 0) {
+          const triggers = await this.prisma.trigger.findMany({
+            where: {
+              type: TriggerType.GOOGLE_MAIL,
+            },
+            include: { workflow: true },
+          });
+
+          for (const trigger of triggers) {
+            const config = trigger.config as any;
+            if (config.watchChannelId === channelId) {
+              workflowIds.push(trigger.workflowId);
+              // Update memory cache
+              this.watchedWorkflows.set(trigger.workflowId, {
+                channelId: config.watchChannelId,
+                topicName: config.topicName,
+              });
+            }
           }
         }
       }

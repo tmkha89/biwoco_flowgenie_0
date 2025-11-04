@@ -4,11 +4,12 @@ import { WebhookTriggerHandler } from '../triggers/webhook.trigger';
 import { GoogleMailTriggerHandler } from '../triggers/google-mail.trigger';
 
 /**
- * Controller for handling trigger endpoints
- * - Webhook endpoint: /api/triggers/webhook/:id
- * - Gmail Pub/Sub endpoint: /api/triggers/gmail/pubsub
+ * @openapi
+ * tags:
+ *   - name: Triggers
+ *     description: Trigger endpoints for webhooks and Gmail Pub/Sub notifications
  */
-@Controller('triggers')
+@Controller('api/triggers')
 export class TriggerController {
   private readonly logger = new Logger(TriggerController.name);
 
@@ -18,8 +19,49 @@ export class TriggerController {
   ) {}
 
   /**
-   * Webhook endpoint
-   * POST /api/triggers/webhook/:id
+   * @openapi
+   * /api/triggers/webhook/{id}:
+   *   post:
+   *     summary: Handle webhook trigger
+   *     description: Receives webhook requests for a specific webhook ID and triggers associated workflows
+   *     tags:
+   *       - Triggers
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Webhook ID
+   *     requestBody:
+   *       required: false
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             additionalProperties: true
+   *           example:
+   *             event: "user_signup"
+   *             userId: 123
+   *             data: {}
+   *     responses:
+   *       200:
+   *         description: Webhook processed successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 message:
+   *                   type: string
+   *                   example: "Webhook processed successfully"
+   *       400:
+   *         description: Invalid request
+   *       404:
+   *         description: Webhook not found
    */
   @Post('webhook/:id')
   @HttpCode(HttpStatus.OK)
@@ -55,12 +97,94 @@ export class TriggerController {
   }
 
   /**
-   * Gmail Pub/Sub endpoint
-   * POST /api/triggers/gmail
-   * POST /api/triggers/gmail/pubsub
+   * @openapi
+   * /api/triggers/gmail:
+   *   post:
+   *     summary: Handle Gmail Pub/Sub push notification
+   *     description: Receives push notifications from Google Cloud Pub/Sub when Gmail events occur. Validates X-Goog headers and processes messages.
+   *     tags:
+   *       - Triggers
+   *     headers:
+   *       x-goog-channel-id:
+   *         schema:
+   *           type: string
+   *         description: Gmail channel ID
+   *       x-goog-resource-state:
+   *         schema:
+   *           type: string
+   *         description: Resource state (exists, sync, etc.)
+   *       x-goog-resource-id:
+   *         schema:
+   *           type: string
+   *         description: Resource ID
+   *       x-goog-resource-uri:
+   *         schema:
+   *           type: string
+   *         description: Resource URI
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               message:
+   *                 type: object
+   *                 properties:
+   *                   data:
+   *                     type: string
+   *                     description: Base64-encoded notification data
+   *                     example: "eyJjaGFubmVsSWQiOiAiMTIzIn0="
+   *               challenge:
+   *                 type: string
+   *                 description: Subscription verification challenge
+   *           example:
+   *             message:
+   *               data: "eyJjaGFubmVsSWQiOiAiMTIzIiwgImVtYWlsQWRkcmVzcyI6ICJ1c2VyQGV4YW1wbGUuY29tIn0="
+   *     responses:
+   *       200:
+   *         description: Notification processed successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *       400:
+   *         description: Invalid notification format
    * 
-   * This endpoint receives push notifications from Google Pub/Sub when Gmail events occur
-   * Validates X-Goog headers and processes messages
+   * /api/triggers/gmail/pubsub:
+   *   post:
+   *     summary: Handle Gmail Pub/Sub push notification (alternative route)
+   *     description: Alternative route for Gmail Pub/Sub notifications. Same functionality as /api/triggers/gmail
+   *     tags:
+   *       - Triggers
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               message:
+   *                 type: object
+   *                 properties:
+   *                   data:
+   *                     type: string
+   *                     description: Base64-encoded notification data
+   *     responses:
+   *       200:
+   *         description: Notification processed successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
    */
   @Post('gmail')
   @Post('gmail/pubsub')
@@ -143,71 +267,94 @@ export class TriggerController {
   }
 
   /**
-   * Health check endpoint for Pub/Sub
-   * GET /api/triggers/gmail/pubsub
+   * @openapi
+   * /api/triggers/gmail/alt:
+   *   post:
+   *     summary: Handle Gmail push notification (alternative format)
+   *     description: Handles direct notification format (alternative to Pub/Sub format). Used for direct Gmail API notifications.
+   *     tags:
+   *       - Triggers
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - workflowId
+   *               - userId
+   *               - messageId
+   *             properties:
+   *               workflowId:
+   *                 type: integer
+   *                 example: 1
+   *               userId:
+   *                 type: integer
+   *                 example: 1
+   *               messageId:
+   *                 type: string
+   *                 example: "1234567890"
+   *               threadId:
+   *                 type: string
+   *                 example: "0987654321"
+   *               labelIds:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                 example: ["INBOX", "UNREAD"]
+   *               snippet:
+   *                 type: string
+   *                 example: "Email preview text..."
+   *               historyId:
+   *                 type: string
+   *                 example: "123456"
+   *           example:
+   *             workflowId: 1
+   *             userId: 1
+   *             messageId: "1234567890"
+   *             threadId: "0987654321"
+   *             labelIds: ["INBOX", "UNREAD"]
+   *             snippet: "Email preview text..."
+   *             historyId: "123456"
+   *     responses:
+   *       200:
+   *         description: Event queued for processing
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 message:
+   *                   type: string
+   *                   example: "Gmail event queued for processing"
+   *       400:
+   *         description: Missing required fields
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: false
+   *                 message:
+   *                   type: string
+   *                   example: "Missing required fields"
    */
-  @Get('gmail/pubsub')
-  async healthCheck(@Req() req: Request, @Res() res: Response): Promise<void> {
-    // Handle subscription verification
-    const mode = req.query['hub.mode'] as string;
-    const topic = req.query['hub.topic'] as string;
-    const challenge = req.query['hub.challenge'] as string;
-
-    if (mode === 'subscribe' && topic && challenge) {
-      this.logger.log(`Pub/Sub subscription verification for topic: ${topic}`);
-      res.status(200).send(challenge);
-    } else {
-      res.status(200).json({ status: 'ok' });
-    }
-  }
-
-  /**
-   * Gmail Push Notification Webhook
-   * POST /api/triggers/gmail (primary)
-   * 
-   * This endpoint receives push notifications from Google Gmail API
-   */
-  @Post('gmail')
+  @Post('gmail/alt')
   @HttpCode(HttpStatus.OK)
-  async handleGmailPush(
+  async handleGmailPushAlternative(
     @Body() body: any,
     @Req() req: Request,
     @Headers() headers: Record<string, string>,
   ): Promise<{ success: boolean; message?: string }> {
-    this.logger.log('Received Gmail push notification');
+    this.logger.log('Received Gmail push notification (alternative format)');
     this.logger.debug(`Gmail push payload: ${JSON.stringify(body)}`);
 
     try {
-      // Validate webhook signature/token if provided
-      const authToken = headers['authorization'] || headers['x-google-auth-token'];
-      if (authToken) {
-        // Add token validation logic here if needed
-        this.logger.debug('Webhook authentication token received');
-      }
-
-      // Handle Pub/Sub push notification format
-      // Google sends notifications in Pub/Sub format
-      if (body.message && body.message.data) {
-        // Decode base64-encoded data
-        const decodedData = Buffer.from(body.message.data, 'base64').toString('utf-8');
-        const notification = JSON.parse(decodedData);
-        
-        this.logger.log(`Processing Gmail push notification: ${JSON.stringify(notification)}`);
-
-        // Extract channel ID and workflow information
-        const channelId = notification.channelId || notification.emailAddress;
-        
-        if (!channelId) {
-          this.logger.warn('No channel ID found in Gmail push notification');
-          return { success: false, message: 'No channel ID found' };
-        }
-
-        // Delegate to existing Pub/Sub handler
-        await this.googleMailTriggerHandler.handlePubSubNotification(channelId, notification);
-        
-        return { success: true, message: 'Gmail push notification processed' };
-      }
-
       // Handle direct notification format (alternative format)
       if (body.historyId || body.messageId) {
         const workflowId = body.workflowId;
@@ -237,12 +384,6 @@ export class TriggerController {
         return { success: true, message: 'Gmail event queued for processing' };
       }
 
-      // Handle subscription verification
-      if (body.challenge) {
-        this.logger.log('Received Gmail subscription verification challenge');
-        return { success: true, message: 'Subscription verified' };
-      }
-
       this.logger.warn('Unrecognized Gmail push notification format');
       return { success: false, message: 'Unrecognized notification format' };
     } catch (error: any) {
@@ -250,5 +391,59 @@ export class TriggerController {
       return { success: false, message: error.message };
     }
   }
-}
 
+  /**
+   * @openapi
+   * /api/triggers/gmail/pubsub:
+   *   get:
+   *     summary: Health check for Gmail Pub/Sub endpoint
+   *     description: Health check endpoint that also handles Pub/Sub subscription verification challenges
+   *     tags:
+   *       - Triggers
+   *     parameters:
+   *       - in: query
+   *         name: hub.mode
+   *         schema:
+   *           type: string
+   *         description: Subscription mode (subscribe)
+   *       - in: query
+   *         name: hub.topic
+   *         schema:
+   *           type: string
+   *         description: Pub/Sub topic
+   *       - in: query
+   *         name: hub.challenge
+   *         schema:
+   *           type: string
+   *         description: Verification challenge
+   *     responses:
+   *       200:
+   *         description: Health check OK or challenge response
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 status:
+   *                   type: string
+   *                   example: "ok"
+   *           text/plain:
+   *             schema:
+   *               type: string
+   *               description: Challenge response (if verification challenge)
+   */
+  @Get('gmail/pubsub')
+  async healthCheck(@Req() req: Request, @Res() res: Response): Promise<void> {
+    // Handle subscription verification
+    const mode = req.query['hub.mode'] as string;
+    const topic = req.query['hub.topic'] as string;
+    const challenge = req.query['hub.challenge'] as string;
+
+    if (mode === 'subscribe' && topic && challenge) {
+      this.logger.log(`Pub/Sub subscription verification for topic: ${topic}`);
+      res.status(200).send(challenge);
+    } else {
+      res.status(200).json({ status: 'ok' });
+    }
+  }
+}

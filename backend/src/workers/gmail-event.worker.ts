@@ -24,18 +24,27 @@ export class GmailEventWorker {
   private appContext: any;
 
   constructor() {
-    this.worker = new Worker(
-      'gmail-event',
-      async (job: Job<GmailEventJobData>) => {
-        return this.processJob(job);
-      },
-      {
-        ...defaultWorkerOptions,
-        concurrency: 10, // Process up to 10 Gmail events concurrently
-      },
-    );
+    try {
+      console.log('[GmailEventWorker] Initializing Gmail event worker...');
+      
+      this.worker = new Worker(
+        'gmail-event',
+        async (job: Job<GmailEventJobData>) => {
+          return this.processJob(job);
+        },
+        {
+          ...defaultWorkerOptions,
+          concurrency: 10, // Process up to 10 Gmail events concurrently
+        },
+      );
 
-    this.setupEventHandlers();
+      this.setupEventHandlers();
+      
+      console.log('[GmailEventWorker] ✅ Gmail event worker initialized successfully');
+    } catch (error: any) {
+      console.error('[GmailEventWorker] ❌ Failed to initialize Gmail event worker:', error);
+      throw error;
+    }
   }
 
   /**
@@ -43,22 +52,32 @@ export class GmailEventWorker {
    */
   private setupEventHandlers(): void {
     this.worker.on('completed', (job: Job) => {
-      console.log(`[GmailEventWorker] Job ${job.id} completed for workflow ${job.data.workflowId}`);
+      console.log(`[GmailEventWorker] ✅ Job ${job.id} completed for workflow ${job.data.workflowId}`);
+    });
+
+    this.worker.on('active', (job: Job) => {
+      console.log(`[GmailEventWorker] 🔄 Job ${job.id} started processing for workflow ${job.data.workflowId}`);
     });
 
     this.worker.on('failed', (job: Job | undefined, error: Error) => {
       if (job) {
         console.error(
-          `[GmailEventWorker] Job ${job.id} failed for workflow ${job.data.workflowId}:`,
+          `[GmailEventWorker] ❌ Job ${job.id} failed for workflow ${job.data.workflowId}:`,
           error.message,
         );
+        console.error('[GmailEventWorker] Error stack:', error.stack);
       } else {
-        console.error('[GmailEventWorker] Job failed:', error.message);
+        console.error('[GmailEventWorker] ❌ Job failed:', error.message);
       }
     });
 
     this.worker.on('error', (error: Error) => {
-      console.error('[GmailEventWorker] Worker error:', error);
+      console.error('[GmailEventWorker] ⚠️ Worker error:', error);
+      console.error('[GmailEventWorker] Error stack:', error.stack);
+    });
+
+    this.worker.on('stalled', (jobId: string) => {
+      console.warn(`[GmailEventWorker] ⚠️ Job ${jobId} stalled`);
     });
   }
 
@@ -236,5 +255,20 @@ export class GmailEventWorker {
 }
 
 // Export singleton instance
-export const gmailEventWorker = new GmailEventWorker();
+let gmailEventWorkerInstance: GmailEventWorker | null = null;
+
+try {
+  gmailEventWorkerInstance = new GmailEventWorker();
+  console.log('[GmailEventWorker] ✅ Gmail event worker singleton created');
+} catch (error: any) {
+  console.error('[GmailEventWorker] ❌ Failed to create Gmail event worker singleton:', error);
+  console.error('[GmailEventWorker] Error stack:', error.stack);
+  // Create a dummy worker to prevent import errors
+  gmailEventWorkerInstance = {
+    name: 'gmail-event-worker',
+    close: async () => {},
+  } as any;
+}
+
+export const gmailEventWorker = gmailEventWorkerInstance;
 

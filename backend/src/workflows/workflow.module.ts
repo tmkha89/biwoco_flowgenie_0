@@ -38,6 +38,7 @@ import { GmailTriggerController } from './controllers/gmail-trigger.controller';
 // Listeners
 import { WorkflowTriggerListener } from './listeners/workflow-trigger.listener';
 import { GmailAutoRegisterListener } from './listeners/gmail-auto-register.listener';
+import { TriggerAutoStartListener } from './listeners/trigger-auto-start.listener';
 
 // Action handlers
 import { ExampleActionHandler } from './actions/example.action';
@@ -108,6 +109,7 @@ import { ParallelActionHandler } from './actions/parallel.action';
     // Listeners
     WorkflowTriggerListener,
     GmailAutoRegisterListener,
+    TriggerAutoStartListener,
     // Schedule queue (optional, for distributed scheduling)
     {
       provide: 'WORKFLOW_SCHEDULE_QUEUE',

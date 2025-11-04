@@ -197,13 +197,15 @@ const WorkflowListPage = () => {
                   >
                     Edit
                   </button>
-                  <button
-                    onClick={() => handleExecute(workflow.id)}
-                    className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!workflow.enabled}
-                  >
-                    Run
-                  </button>
+                  {workflow.trigger?.type !== 'google-mail' && workflow.trigger?.type !== 'webhook' && (
+                    <button
+                      onClick={() => handleExecute(workflow.id)}
+                      className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={!workflow.enabled}
+                    >
+                      Run
+                    </button>
+                  )}
                   <button
                     onClick={() => handleToggle(workflow.id, workflow.enabled)}
                     className={`flex-1 px-3 py-2 rounded text-sm ${
