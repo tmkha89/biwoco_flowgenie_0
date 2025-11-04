@@ -62,28 +62,28 @@ resource "aws_elasticache_parameter_group" "main" {
 
 # ElastiCache Replication Group (Redis Cluster Mode Disabled)
 resource "aws_elasticache_replication_group" "main" {
-  replication_group_id       = "${var.stage}-flowgenie-redis"
-  description                = "Redis cluster for FlowGenie ${var.stage}"
+  replication_group_id = "${var.stage}-flowgenie-redis"
+  description          = "Redis cluster for FlowGenie ${var.stage}"
 
-  engine               = "redis"
-  engine_version       = "7.0"
-  node_type            = var.node_type
-  num_cache_clusters   = var.num_cache_nodes
-  port                 = 6379
+  engine             = "redis"
+  engine_version     = "7.0"
+  node_type          = var.node_type
+  num_cache_clusters = var.num_cache_nodes
+  port               = 6379
 
   parameter_group_name = aws_elasticache_parameter_group.main.name
   subnet_group_name    = aws_elasticache_subnet_group.main.name
-  security_group_ids    = [aws_security_group.redis.id]
+  security_group_ids   = [aws_security_group.redis.id]
 
   at_rest_encryption_enabled = true
-  transit_encryption_enabled  = true
-  auth_token                  = var.auth_token_enabled ? random_password.redis_auth_token[0].result : null
+  transit_encryption_enabled = true
+  auth_token                 = var.auth_token_enabled ? random_password.redis_auth_token[0].result : null
 
   automatic_failover_enabled = var.stage == "prod"
-  multi_az_enabled          = var.stage == "prod"
+  multi_az_enabled           = var.stage == "prod"
 
   snapshot_retention_limit = var.stage == "prod" ? 5 : 0
-  snapshot_window         = var.stage == "prod" ? "03:00-05:00" : null
+  snapshot_window          = var.stage == "prod" ? "03:00-05:00" : null
 
   maintenance_window = "sun:05:00-sun:06:00"
 

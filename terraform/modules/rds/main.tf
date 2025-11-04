@@ -71,7 +71,7 @@ resource "aws_db_instance" "main" {
   allocated_storage     = var.allocated_storage
   max_allocated_storage = var.max_allocated_storage
   storage_type          = "gp3"
-  storage_encrypted      = true
+  storage_encrypted     = true
 
   db_name  = var.db_name
   username = var.db_username
@@ -82,16 +82,16 @@ resource "aws_db_instance" "main" {
   parameter_group_name   = aws_db_parameter_group.main.name
 
   backup_retention_period = var.backup_retention_period
-  backup_window          = var.backup_window
-  maintenance_window     = var.maintenance_window
+  backup_window           = var.backup_window
+  maintenance_window      = var.maintenance_window
 
   skip_final_snapshot       = var.stage != "prod"
-  final_snapshot_identifier  = var.stage == "prod" ? "${var.stage}-flowgenie-db-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
-  deletion_protection        = var.stage == "prod"
+  final_snapshot_identifier = var.stage == "prod" ? "${var.stage}-flowgenie-db-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
+  deletion_protection       = var.stage == "prod"
   multi_az                  = var.stage == "prod"
 
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
-  performance_insights_enabled     = var.stage == "prod"
+  performance_insights_enabled    = var.stage == "prod"
 
   tags = merge(
     var.tags,
