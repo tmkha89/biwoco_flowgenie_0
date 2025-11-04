@@ -1,0 +1,104 @@
+variable "stage" {
+  description = "Deployment stage"
+  type        = string
+}
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "vpc_id" {
+  description = "VPC ID"
+  type        = string
+}
+
+variable "subnet_ids" {
+  description = "Subnet IDs for Lambda"
+  type        = list(string)
+}
+
+variable "security_group_ids" {
+  description = "Security group IDs for Lambda"
+  type        = list(string)
+}
+
+variable "rds_endpoint" {
+  description = "RDS endpoint"
+  type        = string
+}
+
+variable "redis_endpoint" {
+  description = "ElastiCache Redis endpoint"
+  type        = string
+  default     = ""
+}
+
+variable "redis_auth_token" {
+  description = "ElastiCache Redis auth token"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "db_name" {
+  description = "Database name"
+  type        = string
+  default     = "flowgenie_db"
+}
+
+variable "db_username" {
+  description = "Database username"
+  type        = string
+  default     = "flowgenie_admin"
+}
+
+variable "db_password" {
+  description = "Database password"
+  type        = string
+  sensitive   = true
+}
+
+variable "lambda_deployment_package" {
+  description = "Path to Lambda deployment package"
+  type        = string
+  default     = "lambda-api.zip"
+}
+
+variable "lambda_handler" {
+  description = "Lambda handler"
+  type        = string
+  default     = "index.handler"
+}
+
+variable "lambda_runtime" {
+  description = "Lambda runtime"
+  type        = string
+  default     = "nodejs20.x"
+}
+
+variable "lambda_timeout" {
+  description = "Lambda timeout in seconds"
+  type        = number
+  default     = 30
+}
+
+variable "lambda_memory_size" {
+  description = "Lambda memory size in MB"
+  type        = number
+  default     = 512
+}
+
+variable "environment_variables" {
+  description = "Additional environment variables for Lambda"
+  type        = map(string)
+  default     = {}
+  sensitive   = true
+}
+
+variable "tags" {
+  description = "Tags to apply to resources"
+  type        = map(string)
+  default     = {}
+}
+
