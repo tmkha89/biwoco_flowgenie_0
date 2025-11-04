@@ -36,6 +36,7 @@ try {
 // Import workers
 import { exampleWorker } from './example.worker';
 import { workflowWorker } from './workflow.worker';
+import { gmailEventWorker } from './gmail-event.worker';
 
 /**
  * Log prefix for worker messages
@@ -45,7 +46,7 @@ const LOG_PREFIX = '[Worker]';
 /**
  * Array to store all active workers for graceful shutdown
  */
-const workers = [exampleWorker, workflowWorker];
+const workers = [exampleWorker, workflowWorker, gmailEventWorker];
 
 /**
  * Graceful shutdown handler

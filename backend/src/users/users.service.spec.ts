@@ -45,6 +45,8 @@ describe('UsersService', () => {
       const expectedUser = {
         id: 1,
         ...userData,
+        username: null,
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -65,9 +67,11 @@ describe('UsersService', () => {
       const expectedUser = {
         id: 1,
         email: 'test@example.com',
+        username: null,
         name: null,
         avatar: null,
         password: null,
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -87,9 +91,11 @@ describe('UsersService', () => {
       const expectedUser = {
         id: 1,
         email,
+        username: 'testuser',
         name: 'Test User',
         avatar: null,
         password: 'hashedpassword',
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -120,9 +126,11 @@ describe('UsersService', () => {
       const expectedUser = {
         id,
         email: 'test@example.com',
+        username: 'testuser',
         name: 'Test User',
         avatar: null,
         password: 'hashedpassword',
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -158,9 +166,11 @@ describe('UsersService', () => {
       const expectedUser = {
         id,
         email: 'test@example.com',
+        username: 'testuser',
         name: 'Updated Name',
         avatar: 'https://example.com/new-avatar.jpg',
         password: 'hashedpassword',
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -185,9 +195,11 @@ describe('UsersService', () => {
       const expectedUser = {
         id,
         email: 'test@example.com',
+        username: 'testuser',
         name: 'Test User',
         avatar: null,
         password: 'newhashedpassword',
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -211,9 +223,11 @@ describe('UsersService', () => {
       const expectedUser = {
         id,
         email: 'test@example.com',
+        username: 'testuser',
         name: 'Test User',
         avatar: null,
         password: 'oldpassword',
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -238,7 +252,9 @@ describe('UsersService', () => {
       const expectedUser = {
         id: 1,
         ...data,
+        username: null,
         password: null,
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -265,9 +281,11 @@ describe('UsersService', () => {
       const expectedUser = {
         id: 1,
         email: 'existing@example.com',
+        username: 'existinguser',
         name: 'Updated Name',
         avatar: 'https://example.com/new-avatar.jpg',
         password: 'hashedpassword',
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -294,7 +312,9 @@ describe('UsersService', () => {
       const expectedUser = {
         id: 1,
         ...data,
+        username: null,
         avatar: null,
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -321,9 +341,11 @@ describe('UsersService', () => {
       const expectedUser = {
         id: 1,
         email: 'user@example.com',
+        username: 'testuser',
         name: 'Test User',
         avatar: null,
         password: 'oldpassword',
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

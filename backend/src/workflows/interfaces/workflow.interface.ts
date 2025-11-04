@@ -23,7 +23,6 @@ export enum TriggerType {
   WEBHOOK = 'webhook',
   MANUAL = 'manual',
   SCHEDULE = 'schedule',
-  SLACK = 'slack',
 }
 
 export interface IWorkflow {

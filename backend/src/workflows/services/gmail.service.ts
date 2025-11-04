@@ -70,6 +70,8 @@ export class GmailService {
 
     const client = this.createApiClient(accessToken);
 
+    this.logger.log(`Gmail client created successfully: accessToken: ${accessToken}`);
+
     try {
       const response = await client.post(
         '/users/me/watch',
@@ -191,6 +193,28 @@ export class GmailService {
       this.logger.error(`Failed to fetch message ${messageId}:`, error.response?.data || error.message);
       throw new Error(`Failed to fetch Gmail message: ${error.response?.data?.error?.message || error.message}`);
     }
+  }
+
+  /**
+   * Renew a Gmail watch subscription
+   * Gmail watch subscriptions expire after 7 days and need to be renewed
+   */
+  async renewWatch(
+    accessToken: string,
+    watchRequest: GmailWatchRequest,
+  ): Promise<GmailWatchResponse> {
+    this.logger.log(`Renewing Gmail watch with topic: ${watchRequest.topicName}`);
+    
+    // First stop the existing watch
+    try {
+      await this.stopWatch(accessToken);
+    } catch (error: any) {
+      this.logger.warn(`Failed to stop existing watch before renewal: ${error.message}`);
+      // Continue anyway - createWatch will handle if needed
+    }
+
+    // Create a new watch
+    return this.createWatch(accessToken, watchRequest);
   }
 }
 

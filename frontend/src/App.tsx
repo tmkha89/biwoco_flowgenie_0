@@ -8,6 +8,7 @@ import WorkflowBuilderPage from './pages/WorkflowBuilderPage'
 import WorkflowRunPage from './pages/WorkflowRunPage'
 import ProtectedRoute from './routes/ProtectedRoute'
 import OAuthRedirectHandler from './components/OAuthRedirectHandler'
+import GoogleOAuthCallbackPage from './pages/GoogleOAuthCallbackPage'
 import { AuthProvider } from './context/AuthContext'
 
 function App() {
@@ -25,6 +26,8 @@ function App() {
             <Route path="/workflows/:id" element={<ProtectedRoute><WorkflowBuilderPage /></ProtectedRoute>} />
             <Route path="/workflows/:id/execute" element={<ProtectedRoute><WorkflowRunPage /></ProtectedRoute>} />
             <Route path="/oauth-redirect" element={<OAuthRedirectHandler />} />
+            <Route path="/integrations/google/success" element={<ProtectedRoute><GoogleOAuthCallbackPage /></ProtectedRoute>} />
+            <Route path="/integrations/google/error" element={<ProtectedRoute><GoogleOAuthCallbackPage /></ProtectedRoute>} />
           </Routes>
       </AuthProvider>
     </BrowserRouter>

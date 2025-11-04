@@ -8,7 +8,8 @@ import { TriggerRegistry } from './triggers/trigger.registry';
 import { ActionRegistry } from './actions/action.registry';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
 import { UpdateWorkflowDto } from './dto/update-workflow.dto';
-import { WorkflowStatus } from './interfaces/workflow.interface';
+import { WorkflowStatus, TriggerType } from './interfaces/workflow.interface';
+import { PubSubService } from './services/pubsub.service';
 import { Queue } from 'bullmq';
 
 @Injectable()
@@ -23,6 +24,7 @@ export class WorkflowService {
     private readonly actionRegistry: ActionRegistry,
     private readonly prisma: PrismaService,
     @Inject('WORKFLOW_QUEUE') private readonly workflowQueue: Queue,
+    private readonly pubSubService: PubSubService,
   ) {}
 
   async create(userId: number, createDto: CreateWorkflowDto) {
@@ -41,6 +43,11 @@ export class WorkflowService {
     }
 
     this.logger.debug(`All ${createDto.actions.length} actions validated`);
+
+    // Validate Pub/Sub topic for Gmail triggers before saving to database
+    if (createDto.trigger.type === TriggerType.GOOGLE_MAIL) {
+      await this.validatePubSubTopicForGmailTrigger(userId, createDto.trigger.config);
+    }
 
     // Create workflow with trigger and actions
     this.logger.debug(`Creating workflow in database with ${createDto.actions.length} actions`);
@@ -243,6 +250,32 @@ export class WorkflowService {
     return workflowWithRelations;
   }
 
+  /**
+   * Validate Pub/Sub topic creation for Gmail triggers
+   * Ensures topic can be created before saving workflow to database
+   */
+  private async validatePubSubTopicForGmailTrigger(userId: number, config: any): Promise<void> {
+    if (!this.pubSubService.isAvailable()) {
+      throw new BadRequestException(
+        'Pub/Sub service is not available. Please set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS environment variables.'
+      );
+    }
+
+    try {
+      this.logger.log(`[WorkflowService] Validating Pub/Sub topic creation for user ${userId}`);
+      
+      // Attempt to create or verify topic exists
+      const topicPath = await this.pubSubService.createTopic(userId);
+      
+      this.logger.log(`[WorkflowService] ✅ Pub/Sub topic validated successfully: ${topicPath}`);
+    } catch (error: any) {
+      this.logger.error(`[WorkflowService] Failed to validate Pub/Sub topic for user ${userId}: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to validate Pub/Sub topic: ${error.message}. Please ensure Google Cloud Pub/Sub is properly configured.`
+      );
+    }
+  }
+
   async findById(id: number, userId: number) {
     this.logger.debug(`Finding workflow ${id} for user ${userId}`);
     const workflow = await this.workflowRepository.findById(id);
@@ -277,6 +310,12 @@ export class WorkflowService {
     // Update trigger if provided
     if (data.trigger) {
       this.logger.log(`Updating trigger for workflow ${id}`);
+      
+      // Validate Pub/Sub topic for Gmail triggers before updating database
+      if (data.trigger.type === TriggerType.GOOGLE_MAIL) {
+        await this.validatePubSubTopicForGmailTrigger(userId, data.trigger.config);
+      }
+      
       await this.prisma.trigger.update({
         where: { workflowId: id },
         data: {

@@ -48,6 +48,7 @@ describe('AuthService', () => {
       createOrUpdate: jest.fn(),
       findById: jest.fn(),
       findByEmail: jest.fn(),
+      findByUsername: jest.fn(),
       createUser: jest.fn(),
     };
 
@@ -127,9 +128,11 @@ describe('AuthService', () => {
     const mockUser = {
       id: 1,
       email: 'test@example.com',
+      username: 'testuser',
       name: 'Test User',
       avatar: 'https://example.com/avatar.jpg',
       password: '123456',
+      googleLinked: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -189,9 +192,11 @@ describe('AuthService', () => {
     const mockUser = {
       id: 1,
       email: 'test@example.com',
+      username: 'testuser',
       name: 'Test User',
       avatar: null,
       password: "123456",
+      googleLinked: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -213,6 +218,7 @@ describe('AuthService', () => {
       expect(usersService.findById).toHaveBeenCalledWith(1);
       expect(jwtService.generateAccessToken).toHaveBeenCalledWith({
         sub: 1,
+        username: 'testuser',
         email: 'test@example.com',
       });
     });
@@ -250,9 +256,11 @@ describe('AuthService', () => {
       const mockUser = {
         id: 1,
         email: 'test@example.com',
+        username: 'testuser',
         name: 'Test User',
         avatar: 'https://example.com/avatar.jpg',
         password: '123456',
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -282,9 +290,11 @@ describe('AuthService', () => {
     const mockUser = {
       id: 1,
       email: 'test@example.com',
+      username: 'testuser',
       name: 'Test User',
       avatar: 'https://example.com/avatar.jpg',
       password: '$2b$10$hashedpassword',
+      googleLinked: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -298,13 +308,13 @@ describe('AuthService', () => {
     });
 
     it('should successfully login with valid credentials', async () => {
-      usersService.findByEmail.mockResolvedValue(mockUser);
+      usersService.findByUsername.mockResolvedValue(mockUser);
       jwtService.generateAccessToken.mockResolvedValue('jwt-token');
       jwtService.getAccessTokenExpiration.mockReturnValue(3600);
       refreshTokenService.generateRefreshToken.mockResolvedValue('refresh-token');
 
       const result = await service.login({
-        email: 'test@example.com',
+        username: 'testuser',
         password: 'password123',
       });
 
@@ -314,42 +324,44 @@ describe('AuthService', () => {
         expires_in: 3600,
         user: {
           id: 1,
+          username: 'testuser',
           email: 'test@example.com',
           name: 'Test User',
           avatar: 'https://example.com/avatar.jpg',
         },
       });
 
-      expect(usersService.findByEmail).toHaveBeenCalledWith('test@example.com');
+      expect(usersService.findByUsername).toHaveBeenCalledWith('testuser');
       expect(bcrypt.compare).toHaveBeenCalledWith('password123', mockUser.password);
       expect(jwtService.generateAccessToken).toHaveBeenCalledWith({
         sub: 1,
+        username: 'testuser',
         email: 'test@example.com',
       });
       expect(refreshTokenService.generateRefreshToken).toHaveBeenCalledWith(1);
     });
 
     it('should throw UnauthorizedException when user not found', async () => {
-      usersService.findByEmail.mockResolvedValue(null);
+      usersService.findByUsername.mockResolvedValue(null);
 
       await expect(
         service.login({
-          email: 'nonexistent@example.com',
+          username: 'nonexistent',
           password: 'password123',
         }),
       ).rejects.toThrow(UnauthorizedException);
 
-      expect(usersService.findByEmail).toHaveBeenCalledWith('nonexistent@example.com');
+      expect(usersService.findByUsername).toHaveBeenCalledWith('nonexistent');
       expect(bcrypt.compare).not.toHaveBeenCalled();
     });
 
     it('should throw UnauthorizedException for invalid password', async () => {
-      usersService.findByEmail.mockResolvedValue(mockUser);
+      usersService.findByUsername.mockResolvedValue(mockUser);
       jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(false));
 
       await expect(
         service.login({
-          email: 'test@example.com',
+          username: 'testuser',
           password: 'wrongpassword',
         }),
       ).rejects.toThrow(UnauthorizedException);
@@ -362,10 +374,12 @@ describe('AuthService', () => {
   describe('signup', () => {
     const mockNewUser = {
       id: 1,
+      username: 'newuser',
       email: 'newuser@example.com',
       name: 'New User',
       avatar: null,
       password: '$2b$10$hashedpassword',
+      googleLinked: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -379,6 +393,7 @@ describe('AuthService', () => {
     });
 
     it('should successfully signup new user', async () => {
+      usersService.findByUsername.mockResolvedValue(null);
       usersService.findByEmail.mockResolvedValue(null);
       usersService.createUser.mockResolvedValue(mockNewUser);
       jwtService.generateAccessToken.mockResolvedValue('jwt-token');
@@ -387,6 +402,7 @@ describe('AuthService', () => {
 
       const result = await service.signup({
         name: 'New User',
+        username: 'newuser',
         email: 'newuser@example.com',
         password: 'password123',
       });
@@ -397,45 +413,83 @@ describe('AuthService', () => {
         expires_in: 3600,
         user: {
           id: 1,
+          username: 'newuser',
           email: 'newuser@example.com',
           name: 'New User',
+          googleLinked: false,
         },
       });
 
+      expect(usersService.findByUsername).toHaveBeenCalledWith('newuser');
       expect(usersService.findByEmail).toHaveBeenCalledWith('newuser@example.com');
       expect(bcrypt.hash).toHaveBeenCalledWith('password123', 10);
       expect(usersService.createUser).toHaveBeenCalledWith({
         name: 'New User',
+        username: 'newuser',
         email: 'newuser@example.com',
         password: '$2b$10$hashedpassword',
       });
       expect(jwtService.generateAccessToken).toHaveBeenCalledWith({
         sub: 1,
+        username: 'newuser',
         email: 'newuser@example.com',
       });
+    });
+
+    it('should throw BadRequestException for duplicate username', async () => {
+      const existingUser = {
+        id: 1,
+        username: 'existinguser',
+        email: 'existing@example.com',
+        name: 'Existing User',
+        avatar: null,
+        password: '$2b$10$hashedpassword',
+        googleLinked: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      usersService.findByUsername.mockResolvedValue(existingUser);
+
+      await expect(
+        service.signup({
+          name: 'New User',
+          username: 'existinguser',
+          email: 'newuser@example.com',
+          password: 'password123',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(usersService.findByUsername).toHaveBeenCalledWith('existinguser');
+      expect(usersService.createUser).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException for duplicate email', async () => {
       const existingUser = {
         id: 1,
+        username: 'existinguser',
         email: 'existing@example.com',
         name: 'Existing User',
         avatar: null,
         password: '$2b$10$hashedpassword',
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
 
+      usersService.findByUsername.mockResolvedValue(null);
       usersService.findByEmail.mockResolvedValue(existingUser);
 
       await expect(
         service.signup({
           name: 'New User',
+          username: 'newuser',
           email: 'existing@example.com',
           password: 'password123',
         }),
       ).rejects.toThrow(BadRequestException);
 
+      expect(usersService.findByUsername).toHaveBeenCalledWith('newuser');
       expect(usersService.findByEmail).toHaveBeenCalledWith('existing@example.com');
       expect(usersService.createUser).not.toHaveBeenCalled();
     });

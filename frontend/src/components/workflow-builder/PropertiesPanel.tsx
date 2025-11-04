@@ -5,11 +5,48 @@ import { useWorkflowBuilderStore } from '../../store/workflow-builder.store';
 import { ActionType } from '../../types/workflow-builder';
 import { TriggerType } from '../../types/workflows';
 import { useAuth } from '../../context/AuthContext';
-import { connectGoogle } from '../../api/auth';
+import { useGoogleIntegration } from '../../hooks/useGoogleIntegration';
+import { useEffect, useRef } from 'react';
 
 const PropertiesPanel = () => {
   const { selectedNode, updateNode, deleteNode, setTrigger, trigger, workflowMeta, setWorkflowMeta } = useWorkflowBuilderStore();
   const { user } = useAuth();
+  const { isConnected, isConnecting, connect, checkStatus } = useGoogleIntegration();
+  
+  // Track if we've already checked status for the current trigger type
+  const hasCheckedStatusRef = useRef<string | null>(null);
+
+  // Auto-set userId when Gmail trigger is selected and user is logged in
+  useEffect(() => {
+    if (selectedNode?.data.type === 'trigger' && trigger.type === TriggerType.GOOGLE_MAIL && user?.id) {
+      const currentUserId = trigger.config?.userId;
+      if (!currentUserId || currentUserId !== user.id) {
+        // Auto-use current user ID
+        const updateConfig = (updates: Record<string, any>) => {
+          setTrigger({
+            type: trigger.type,
+            config: { ...trigger.config, ...updates },
+          });
+        };
+        updateConfig({ userId: user.id });
+      }
+    }
+  }, [selectedNode, trigger.type, user?.id, trigger.config?.userId, setTrigger]);
+
+  // Check Google connection status when Gmail trigger is selected (only once per trigger type change)
+  useEffect(() => {
+    if (selectedNode?.data.type === 'trigger' && trigger.type === TriggerType.GOOGLE_MAIL) {
+      // Only call checkStatus once when trigger type changes to GOOGLE_MAIL
+      const triggerKey = `${trigger.type}-${selectedNode?.id}`;
+      if (hasCheckedStatusRef.current !== triggerKey) {
+        hasCheckedStatusRef.current = triggerKey;
+        checkStatus();
+      }
+    } else {
+      // Reset the ref when trigger type is not GOOGLE_MAIL
+      hasCheckedStatusRef.current = null;
+    }
+  }, [selectedNode?.id, trigger.type, checkStatus]);
 
   if (!selectedNode) {
     return (
@@ -73,7 +110,7 @@ const PropertiesPanel = () => {
               if (newType === TriggerType.WEBHOOK) {
                 defaultConfig = { path: '', secret: '' };
               } else if (newType === TriggerType.GOOGLE_MAIL) {
-                defaultConfig = { userId: undefined, labelIds: ['INBOX'] };
+                defaultConfig = { userId: user?.id, labelIds: ['INBOX'] };
               } else if (newType === TriggerType.SCHEDULE) {
                 defaultConfig = { cron: '', interval: undefined, timezone: 'UTC' };
               }
@@ -137,54 +174,79 @@ const PropertiesPanel = () => {
         {/* Google-Mail Configuration */}
         {trigger.type === TriggerType.GOOGLE_MAIL && (
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                User ID
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={trigger.config?.userId || user?.id || ''}
-                  onChange={(e) => updateConfig({ userId: parseInt(e.target.value) || undefined })}
-                  placeholder="User ID with Google OAuth"
-                  className="flex-1 border border-gray-300 rounded px-3 py-2"
-                />
-                {user?.id && (
-                  <button
-                    type="button"
-                    onClick={() => updateConfig({ userId: user.id })}
-                    className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm whitespace-nowrap"
-                    title="Use your current user ID"
-                  >
-                    Use Mine
-                  </button>
-                )}
+            {/* Google Connection Status */}
+            {!isConnected ? (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 mt-1">
+                    <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-yellow-800 mb-1">
+                      Connect your Google account
+                    </h4>
+                    <p className="text-xs text-yellow-700 mb-3">
+                      To activate the Gmail Trigger, you need to connect your Google account first. This allows FlowGenie to listen for new emails automatically.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={connect}
+                      disabled={isConnecting}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                    >
+                      {isConnecting ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Connecting...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                          </svg>
+                          Connect with Google
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                {user?.id ? (
-                  <>
-                    Your User ID: <strong>{user.id}</strong>. Make sure this user has authenticated with Google OAuth.
-                    {trigger.config?.userId && trigger.config.userId !== user.id && (
-                      <span className="block mt-1 text-amber-600">
-                        ⚠️ Using different User ID. Ensure that user has Google OAuth enabled.
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  'User ID who has authenticated with Google OAuth. Click "Use Mine" to use your current user ID.'
-                )}
-              </p>
-              <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
-                <strong>How to get User ID:</strong>
-                <ul className="list-disc list-inside mt-1 space-y-1">
-                  <li>Use your current logged-in user ID (shown above)</li>
-                  <li>Or enter another user's ID who has Google OAuth connected</li>
-                  <li>Make sure the user has authenticated via Google OAuth first</li>
-                  <li>Check the Users page or API to find user IDs</li>
-                </ul>
+            ) : (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm font-medium text-green-800">
+                    ✅ Gmail connected successfully
+                  </span>
+                </div>
+                <p className="text-xs text-green-700 mt-1">
+                  Your Google account is connected. The Gmail Trigger will automatically activate when you save this workflow.
+                </p>
               </div>
-            </div>
-            <div>
+            )}
+
+            {/* Gmail Configuration (only shown when connected) */}
+            {isConnected && (
+              <>
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+                    </svg>
+                    Gmail Trigger Settings
+                  </h4>
+                </div>
+                <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Gmail Labels (comma-separated)
               </label>
@@ -223,39 +285,8 @@ const PropertiesPanel = () => {
                 </div>
               </details>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Pub/Sub Topic Name (optional)
-              </label>
-              <input
-                type="text"
-                value={trigger.config?.topicName || ''}
-                onChange={(e) => updateConfig({ topicName: e.target.value })}
-                placeholder="auto-generated"
-                className="w-full border border-gray-300 rounded px-3 py-2"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Leave empty to auto-generate a unique topic name
-              </p>
-              <details className="mt-2 text-xs">
-                <summary className="text-blue-600 cursor-pointer hover:text-blue-800">
-                  How to set up Google Cloud Pub/Sub
-                </summary>
-                <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-gray-700">
-                  <p className="mb-2"><strong>To use Google Mail trigger, you need:</strong></p>
-                  <ol className="list-decimal list-inside space-y-1">
-                    <li>Create a Google Cloud Project (if you haven't)</li>
-                    <li>Enable Gmail API and Pub/Sub API</li>
-                    <li>Create a Pub/Sub topic in Google Cloud Console</li>
-                    <li>Configure the topic name here (or leave blank for auto-generation)</li>
-                    <li>Set up a subscription that points to: <code className="bg-gray-200 px-1 rounded">https://your-domain.com/api/triggers/gmail/pubsub</code></li>
-                  </ol>
-                  <p className="mt-2 text-xs text-gray-600">
-                    <strong>Note:</strong> The Pub/Sub endpoint must be publicly accessible for Google to send notifications.
-                  </p>
-                </div>
-              </details>
-            </div>
+              </>
+            )}
           </div>
         )}
 
@@ -472,12 +503,7 @@ const PropertiesPanel = () => {
                 You need to connect your Google account to send emails via Gmail.
               </p>
               <button
-                onClick={() => {
-                  const accessToken = localStorage.getItem('access_token');
-                  if (accessToken) {
-                    connectGoogle(accessToken);
-                  }
-                }}
+                onClick={connect}
                 className="w-full bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg transition-colors"
               >
                 Connect Google Account

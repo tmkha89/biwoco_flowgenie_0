@@ -106,7 +106,8 @@ describe('GoogleOAuthService', () => {
       expect(result).toContain('client_id=test-client-id');
       expect(result).toContain('redirect_uri=');
       expect(result).toContain('response_type=code');
-      expect(result).toContain('scope=openid+email+profile');
+      expect(result).toContain('gmail.readonly');
+      expect(result).toContain('gmail.send');
       expect(result).toContain('access_type=offline');
       expect(result).toContain('prompt=consent');
     });
@@ -122,7 +123,8 @@ describe('GoogleOAuthService', () => {
     it('should not include state parameter if not provided', () => {
       const result = service.getAuthorizationUrl();
 
-      expect(result).not.toContain('state=');
+      // State parameter may be included but empty, so check for actual state value
+      expect(result).not.toMatch(/state=[^&]+/);
     });
   });
 
