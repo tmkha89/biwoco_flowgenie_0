@@ -12,7 +12,10 @@ export class HttpActionHandler extends BaseActionHandler {
   readonly type = 'http_request';
   readonly name = 'HTTP Request';
 
-  async execute(context: ExecutionContext, config: Record<string, any>): Promise<any> {
+  async execute(
+    context: ExecutionContext,
+    config: Record<string, any>,
+  ): Promise<any> {
     const {
       method = 'GET',
       url,
@@ -31,7 +34,10 @@ export class HttpActionHandler extends BaseActionHandler {
     const resolvedUrl = this.resolveTemplate(url, context);
     const resolvedHeaders = this.resolveTemplateObject(headers, context);
     const resolvedBody = body ? this.resolveTemplate(body, context) : undefined;
-    const resolvedQueryParams = this.resolveTemplateObject(queryParams, context);
+    const resolvedQueryParams = this.resolveTemplateObject(
+      queryParams,
+      context,
+    );
 
     // Configure axios request
     const axiosConfig: AxiosRequestConfig = {
@@ -65,7 +71,10 @@ export class HttpActionHandler extends BaseActionHandler {
     }
 
     // Add body for POST, PUT, PATCH
-    if (['POST', 'PUT', 'PATCH'].includes(method.toUpperCase()) && resolvedBody) {
+    if (
+      ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase()) &&
+      resolvedBody
+    ) {
       axiosConfig.data = resolvedBody;
     }
 
@@ -86,7 +95,9 @@ export class HttpActionHandler extends BaseActionHandler {
         );
       } else if (error.request) {
         // The request was made but no response was received
-        throw new Error(`HTTP Request failed: No response received - ${error.message}`);
+        throw new Error(
+          `HTTP Request failed: No response received - ${error.message}`,
+        );
       } else {
         // Something happened in setting up the request
         throw new Error(`HTTP Request failed: ${error.message}`);
@@ -127,12 +138,17 @@ export class HttpActionHandler extends BaseActionHandler {
   /**
    * Resolve template variables in an object
    */
-  private resolveTemplateObject(obj: Record<string, any>, context: ExecutionContext): Record<string, any> {
+  private resolveTemplateObject(
+    obj: Record<string, any>,
+    context: ExecutionContext,
+  ): Record<string, any> {
     const resolved: Record<string, any> = {};
     for (const [key, value] of Object.entries(obj)) {
-      resolved[key] = typeof value === 'string' ? this.resolveTemplate(value, context) : value;
+      resolved[key] =
+        typeof value === 'string'
+          ? this.resolveTemplate(value, context)
+          : value;
     }
     return resolved;
   }
 }
-

@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../database/prisma.service';
 import { TriggerRegistry } from '../triggers/trigger.registry';
@@ -31,18 +36,20 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     this.logger.log('TriggerAutoStartListener initializing...');
-    
+
     try {
       // Start all trigger listeners
       await this.startAllTriggerListeners();
-      
+
       // Start health check and restart mechanism
       this.startHealthCheck();
-      
+
       this.isInitialized = true;
       this.logger.log('✅ TriggerAutoStartListener initialized successfully');
     } catch (error: any) {
-      this.logger.error(`❌ Failed to initialize TriggerAutoStartListener: ${error.message}`);
+      this.logger.error(
+        `❌ Failed to initialize TriggerAutoStartListener: ${error.message}`,
+      );
       // Retry after a delay
       setTimeout(() => this.onModuleInit(), 10000);
     }
@@ -50,12 +57,12 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy() {
     this.logger.log('TriggerAutoStartListener shutting down...');
-    
+
     if (this.restartInterval) {
       clearInterval(this.restartInterval);
       this.restartInterval = null;
     }
-    
+
     this.isInitialized = false;
   }
 
@@ -94,19 +101,30 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
 
       // Start listeners for each trigger type
       for (const [triggerType, workflows] of workflowsByType.entries()) {
-        this.logger.log(`Starting ${workflows.length} workflows with trigger type: ${triggerType}`);
-        
+        this.logger.log(
+          `Starting ${workflows.length} workflows with trigger type: ${triggerType}`,
+        );
+
         for (const workflow of workflows) {
           try {
-            await this.startTriggerListener(workflow.id, triggerType, workflow.trigger!.config as Record<string, any>, workflow.userId);
+            await this.startTriggerListener(
+              workflow.id,
+              triggerType,
+              workflow.trigger!.config as Record<string, any>,
+              workflow.userId,
+            );
           } catch (error: any) {
-            this.logger.error(`Failed to start trigger for workflow ${workflow.id}: ${error.message}`);
+            this.logger.error(
+              `Failed to start trigger for workflow ${workflow.id}: ${error.message}`,
+            );
             // Continue with other workflows
           }
         }
       }
 
-      this.logger.log(`✅ Started trigger listeners for ${workflows.length} workflows`);
+      this.logger.log(
+        `✅ Started trigger listeners for ${workflows.length} workflows`,
+      );
     } catch (error: any) {
       this.logger.error(`Error starting trigger listeners: ${error.message}`);
       throw error;
@@ -122,7 +140,9 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
     config: Record<string, any>,
     userId: number,
   ): Promise<void> {
-    this.logger.log(`Starting trigger listener for workflow ${workflowId} (type: ${triggerType})`);
+    this.logger.log(
+      `Starting trigger listener for workflow ${workflowId} (type: ${triggerType})`,
+    );
 
     try {
       const handler = this.triggerRegistry.getHandler(triggerType);
@@ -135,25 +155,29 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
         case TriggerType.GOOGLE_MAIL:
           await this.startGmailListener(workflowId, config, userId);
           break;
-        
+
         case TriggerType.SCHEDULE:
           await this.startScheduleListener(workflowId, config);
           break;
-        
+
         case TriggerType.WEBHOOK:
           await this.startWebhookListener(workflowId, config);
           break;
-        
+
         case TriggerType.MANUAL:
           // Manual triggers don't need listeners
-          this.logger.debug(`Manual trigger for workflow ${workflowId} - no listener needed`);
+          this.logger.debug(
+            `Manual trigger for workflow ${workflowId} - no listener needed`,
+          );
           break;
-        
+
         default:
           this.logger.warn(`Unknown trigger type: ${triggerType}`);
       }
     } catch (error: any) {
-      this.logger.error(`Error starting trigger listener for workflow ${workflowId}: ${error.message}`);
+      this.logger.error(
+        `Error starting trigger listener for workflow ${workflowId}: ${error.message}`,
+      );
       throw error;
     }
   }
@@ -179,7 +203,9 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
       });
 
       if (!oauthAccount || !oauthAccount.accessToken) {
-        this.logger.warn(`User ${userId} does not have Google OAuth account, skipping Gmail trigger for workflow ${workflowId}`);
+        this.logger.warn(
+          `User ${userId} does not have Google OAuth account, skipping Gmail trigger for workflow ${workflowId}`,
+        );
         return;
       }
 
@@ -190,7 +216,9 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
           const topicPath = this.pubSubService.getTopicPath(userId);
           await this.pubSubService.createSubscription(userId, topicPath);
         } catch (error: any) {
-          this.logger.warn(`Failed to create Pub/Sub topic/subscription: ${error.message}`);
+          this.logger.warn(
+            `Failed to create Pub/Sub topic/subscription: ${error.message}`,
+          );
         }
       }
 
@@ -202,7 +230,9 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
 
       this.logger.log(`✅ Gmail listener started for workflow ${workflowId}`);
     } catch (error: any) {
-      this.logger.error(`Failed to start Gmail listener for workflow ${workflowId}: ${error.message}`);
+      this.logger.error(
+        `Failed to start Gmail listener for workflow ${workflowId}: ${error.message}`,
+      );
       // Don't throw - allow other workflows to start
     }
   }
@@ -219,9 +249,13 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
 
     try {
       await this.scheduleTriggerHandler.register(workflowId, config);
-      this.logger.log(`✅ Schedule listener started for workflow ${workflowId}`);
+      this.logger.log(
+        `✅ Schedule listener started for workflow ${workflowId}`,
+      );
     } catch (error: any) {
-      this.logger.error(`Failed to start schedule listener for workflow ${workflowId}: ${error.message}`);
+      this.logger.error(
+        `Failed to start schedule listener for workflow ${workflowId}: ${error.message}`,
+      );
       // Don't throw - allow other workflows to start
     }
   }
@@ -242,7 +276,9 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
       await this.webhookTriggerHandler.register(workflowId, config);
       this.logger.log(`✅ Webhook listener started for workflow ${workflowId}`);
     } catch (error: any) {
-      this.logger.error(`Failed to start webhook listener for workflow ${workflowId}: ${error.message}`);
+      this.logger.error(
+        `Failed to start webhook listener for workflow ${workflowId}: ${error.message}`,
+      );
       // Don't throw - allow other workflows to start
     }
   }
@@ -295,7 +331,7 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
               // If not, restart it
               await this.scheduleTriggerHandler.register(workflow.id, config);
               break;
-            
+
             case TriggerType.GOOGLE_MAIL:
               // Check if Gmail watch is registered
               // Re-register if needed (will handle existing watch gracefully)
@@ -304,16 +340,25 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
                 userId: workflow.userId,
               });
               break;
-            
+
             // Webhook and Manual don't need health checks
           }
         } catch (error: any) {
-          this.logger.warn(`Health check failed for workflow ${workflow.id}: ${error.message}`);
+          this.logger.warn(
+            `Health check failed for workflow ${workflow.id}: ${error.message}`,
+          );
           // Try to restart
           try {
-            await this.startTriggerListener(workflow.id, triggerType, config, workflow.userId);
+            await this.startTriggerListener(
+              workflow.id,
+              triggerType,
+              config,
+              workflow.userId,
+            );
           } catch (restartError: any) {
-            this.logger.error(`Failed to restart listener for workflow ${workflow.id}: ${restartError.message}`);
+            this.logger.error(
+              `Failed to restart listener for workflow ${workflow.id}: ${restartError.message}`,
+            );
           }
         }
       }
@@ -328,13 +373,15 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
   async restartAllListeners(): Promise<void> {
     this.logger.log('Restarting all trigger listeners...');
     this.isInitialized = false;
-    
+
     try {
       await this.startAllTriggerListeners();
       this.isInitialized = true;
       this.logger.log('✅ All trigger listeners restarted successfully');
     } catch (error: any) {
-      this.logger.error(`Failed to restart trigger listeners: ${error.message}`);
+      this.logger.error(
+        `Failed to restart trigger listeners: ${error.message}`,
+      );
       // Retry after delay
       setTimeout(() => this.restartAllListeners(), 10000);
     }
@@ -345,16 +392,23 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
    * Automatically start trigger listener for newly created workflows
    */
   @OnEvent('workflow.created')
-  async handleWorkflowCreated(payload: { workflowId: number; enabled: boolean }) {
+  async handleWorkflowCreated(payload: {
+    workflowId: number;
+    enabled: boolean;
+  }) {
     const { workflowId, enabled } = payload;
-    
+
     if (!enabled) {
-      this.logger.debug(`Workflow ${workflowId} created but disabled, skipping trigger listener start`);
+      this.logger.debug(
+        `Workflow ${workflowId} created but disabled, skipping trigger listener start`,
+      );
       return;
     }
 
-    this.logger.log(`Workflow ${workflowId} created and enabled, starting trigger listener...`);
-    
+    this.logger.log(
+      `Workflow ${workflowId} created and enabled, starting trigger listener...`,
+    );
+
     try {
       const workflow = await this.prisma.workflow.findUnique({
         where: { id: workflowId },
@@ -372,10 +426,14 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
         workflow.trigger.config as Record<string, any>,
         workflow.userId,
       );
-      
-      this.logger.log(`✅ Trigger listener started for newly created workflow ${workflowId}`);
+
+      this.logger.log(
+        `✅ Trigger listener started for newly created workflow ${workflowId}`,
+      );
     } catch (error: any) {
-      this.logger.error(`Failed to start trigger listener for new workflow ${workflowId}: ${error.message}`);
+      this.logger.error(
+        `Failed to start trigger listener for new workflow ${workflowId}: ${error.message}`,
+      );
     }
   }
 
@@ -384,11 +442,17 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
    * Restart trigger listener if workflow was enabled or trigger was updated
    */
   @OnEvent('workflow.updated')
-  async handleWorkflowUpdated(payload: { workflowId: number; enabled: boolean; triggerUpdated?: boolean }) {
+  async handleWorkflowUpdated(payload: {
+    workflowId: number;
+    enabled: boolean;
+    triggerUpdated?: boolean;
+  }) {
     const { workflowId, enabled, triggerUpdated } = payload;
-    
-    this.logger.log(`Workflow ${workflowId} updated, enabled: ${enabled}, triggerUpdated: ${triggerUpdated}`);
-    
+
+    this.logger.log(
+      `Workflow ${workflowId} updated, enabled: ${enabled}, triggerUpdated: ${triggerUpdated}`,
+    );
+
     try {
       const workflow = await this.prisma.workflow.findUnique({
         where: { id: workflowId },
@@ -408,18 +472,25 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
           workflow.trigger.config as Record<string, any>,
           workflow.userId,
         );
-        this.logger.log(`✅ Trigger listener restarted for updated workflow ${workflowId}`);
+        this.logger.log(
+          `✅ Trigger listener restarted for updated workflow ${workflowId}`,
+        );
       } else {
         // Unregister trigger if workflow is disabled
-        const handler = this.triggerRegistry.getHandler(workflow.trigger.type as TriggerType);
+        const handler = this.triggerRegistry.getHandler(
+          workflow.trigger.type as TriggerType,
+        );
         if (handler) {
           await handler.unregister(workflowId);
-          this.logger.log(`✅ Trigger listener stopped for disabled workflow ${workflowId}`);
+          this.logger.log(
+            `✅ Trigger listener stopped for disabled workflow ${workflowId}`,
+          );
         }
       }
     } catch (error: any) {
-      this.logger.error(`Failed to handle workflow update for workflow ${workflowId}: ${error.message}`);
+      this.logger.error(
+        `Failed to handle workflow update for workflow ${workflowId}: ${error.message}`,
+      );
     }
   }
 }
-

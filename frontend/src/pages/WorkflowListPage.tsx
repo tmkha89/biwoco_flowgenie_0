@@ -162,70 +162,96 @@ const WorkflowListPage = () => {
         )}
 
         {!isLoading && workflows.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {workflows.map((workflow) => (
-              <div
-                key={workflow.id}
-                className="border border-gray-200 rounded-lg p-4 hover:shadow-lg transition-shadow"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="text-xl font-semibold">{workflow.name}</h3>
-                  <span
-                    className={`px-2 py-1 rounded text-xs ${
-                      workflow.enabled
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}
-                  >
-                    {workflow.enabled ? 'Enabled' : 'Disabled'}
-                  </span>
-                </div>
-
-                {workflow.description && (
-                  <p className="text-gray-600 text-sm mb-3">{workflow.description}</p>
-                )}
-
-                <div className="text-sm text-gray-500 mb-3">
-                  <div>Trigger: {workflow.trigger?.type || 'N/A'}</div>
-                  <div>Actions: {workflow.actions.length}</div>
-                </div>
-
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => navigate(`/workflows/${workflow.id}/edit`)}
-                    className="flex-1 bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700"
-                  >
-                    Edit
-                  </button>
-                  {workflow.trigger?.type !== 'google-mail' && workflow.trigger?.type !== 'webhook' && (
-                    <button
-                      onClick={() => handleExecute(workflow.id)}
-                      className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={!workflow.enabled}
-                    >
-                      Run
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleToggle(workflow.id, workflow.enabled)}
-                    className={`flex-1 px-3 py-2 rounded text-sm ${
-                      workflow.enabled
-                        ? 'bg-yellow-600 text-white hover:bg-yellow-700'
-                        : 'bg-gray-600 text-white hover:bg-gray-700'
-                    }`}
-                    title={workflow.enabled ? 'Disable workflow' : 'Enable workflow'}
-                  >
-                    {workflow.enabled ? 'Disable' : 'Enable'}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(workflow.id)}
-                    className="bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Trigger
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Created
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {workflows.map((workflow) => (
+                  <tr key={workflow.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {workflow.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {workflow.trigger?.type || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {workflow.actions.length}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          workflow.enabled
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        {workflow.enabled ? 'Enabled' : 'Disabled'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(workflow.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => navigate(`/workflows/${workflow.id}/edit`)}
+                          className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition"
+                        >
+                          Edit
+                        </button>
+                        {workflow.trigger?.type !== 'google-mail' && workflow.trigger?.type !== 'webhook' && (
+                          <button
+                            onClick={() => handleExecute(workflow.id)}
+                            className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={!workflow.enabled}
+                          >
+                            Run
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleToggle(workflow.id, workflow.enabled)}
+                          className={`px-3 py-1 rounded text-sm transition ${
+                            workflow.enabled
+                              ? 'bg-yellow-600 text-white hover:bg-yellow-700'
+                              : 'bg-gray-600 text-white hover:bg-gray-700'
+                          }`}
+                          title={workflow.enabled ? 'Disable workflow' : 'Enable workflow'}
+                        >
+                          {workflow.enabled ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          onClick={() => handleDelete(workflow.id)}
+                          className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

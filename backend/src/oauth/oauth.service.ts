@@ -28,7 +28,10 @@ export class OAuthService {
     provider: string,
     providerUserId: string,
   ): Promise<OAuthAccount | null> {
-    return this.oauthRepository.findByProviderAndUserId(provider, providerUserId);
+    return this.oauthRepository.findByProviderAndUserId(
+      provider,
+      providerUserId,
+    );
   }
 
   async updateOAuthAccount(
@@ -77,15 +80,23 @@ export class OAuthService {
     return this.oauthRepository.findByUserId(userId);
   }
 
-  async findByUserIdAndProvider(userId: number, provider: string): Promise<OAuthAccount | null> {
+  async findByUserIdAndProvider(
+    userId: number,
+    provider: string,
+  ): Promise<OAuthAccount | null> {
     const accounts = await this.oauthRepository.findByUserId(userId);
-    return accounts.find(account => account.provider === provider) || null;
+    return accounts.find((account) => account.provider === provider) || null;
   }
 
-  async refreshGoogleTokens(userId: number, refreshToken: string, googleOAuthService: any): Promise<OAuthAccount> {
+  async refreshGoogleTokens(
+    userId: number,
+    refreshToken: string,
+    googleOAuthService: any,
+  ): Promise<OAuthAccount> {
     // Exchange refresh token for new access token
-    const tokenResponse = await googleOAuthService.refreshAccessToken(refreshToken);
-    
+    const tokenResponse =
+      await googleOAuthService.refreshAccessToken(refreshToken);
+
     // Find existing OAuth account
     const oauthAccount = await this.findByUserIdAndProvider(userId, 'google');
     if (!oauthAccount) {
@@ -104,7 +115,10 @@ export class OAuthService {
     });
   }
 
-  async getGoogleAccessToken(userId: number, googleOAuthService: any): Promise<string> {
+  async getGoogleAccessToken(
+    userId: number,
+    googleOAuthService: any,
+  ): Promise<string> {
     // Get Google OAuth account
     const oauthAccount = await this.findByUserIdAndProvider(userId, 'google');
     if (!oauthAccount || !oauthAccount.accessToken) {
@@ -112,17 +126,20 @@ export class OAuthService {
     }
 
     // Check if token is expired or about to expire (within 5 minutes)
-    const isExpired = oauthAccount.expiresAt 
+    const isExpired = oauthAccount.expiresAt
       ? oauthAccount.expiresAt.getTime() <= Date.now() + 5 * 60 * 1000
       : false;
 
     if (isExpired && oauthAccount.refreshToken) {
       // Refresh the token
-      const refreshed = await this.refreshGoogleTokens(userId, oauthAccount.refreshToken, googleOAuthService);
+      const refreshed = await this.refreshGoogleTokens(
+        userId,
+        oauthAccount.refreshToken,
+        googleOAuthService,
+      );
       return refreshed.accessToken || '';
     }
 
     return oauthAccount.accessToken;
   }
 }
-

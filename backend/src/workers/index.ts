@@ -1,17 +1,16 @@
 /**
  * Worker Service Entry Point
- * 
+ *
  * This is the main entry point for the BullMQ worker service.
  * It initializes all workers and handles graceful shutdown.
  */
 
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
 // Load environment variables (optional - Docker provides env vars via docker-compose)
 // This is mainly useful for local development
 try {
-  // Try to load dotenv if available
-  const dotenv = require('dotenv');
-  const path = require('path');
-  
   const envPaths = [
     path.join(__dirname, '../../.env'),
     path.join(__dirname, '../../../.env'),
@@ -52,7 +51,9 @@ const workers = [exampleWorker, workflowWorker, gmailEventWorker];
  * Graceful shutdown handler
  */
 async function shutdown(signal: string) {
-  console.log(`\n${LOG_PREFIX} Received ${signal}, shutting down gracefully...`);
+  console.log(
+    `\n${LOG_PREFIX} Received ${signal}, shutting down gracefully...`,
+  );
 
   // Close all workers
   const shutdownPromises = workers.map(async (worker) => {
@@ -60,7 +61,10 @@ async function shutdown(signal: string) {
       await worker.close();
       console.log(`${LOG_PREFIX} Worker "${worker.name}" closed`);
     } catch (error) {
-      console.error(`${LOG_PREFIX} Error closing worker "${worker.name}":`, error);
+      console.error(
+        `${LOG_PREFIX} Error closing worker "${worker.name}":`,
+        error,
+      );
     }
   });
 
@@ -79,7 +83,12 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error(`${LOG_PREFIX} Unhandled Rejection at:`, promise, 'reason:', reason);
+  console.error(
+    `${LOG_PREFIX} Unhandled Rejection at:`,
+    promise,
+    'reason:',
+    reason,
+  );
 });
 
 /**
@@ -93,8 +102,12 @@ process.on('SIGINT', () => shutdown('SIGINT'));
  */
 async function start() {
   console.log(`${LOG_PREFIX} Starting FlowGenie Worker Service...`);
-  console.log(`${LOG_PREFIX} Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`${LOG_PREFIX} Redis URL: ${process.env.REDIS_URL || 'redis://localhost:6379'}`);
+  console.log(
+    `${LOG_PREFIX} Environment: ${process.env.NODE_ENV || 'development'}`,
+  );
+  console.log(
+    `${LOG_PREFIX} Redis URL: ${process.env.REDIS_URL || 'redis://localhost:6379'}`,
+  );
 
   // Verify Redis connection
   const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -106,13 +119,15 @@ async function start() {
     try {
       const name = worker.name || 'unknown';
       console.log(`${LOG_PREFIX}   - ${name}`);
-      
+
       // Verify worker is properly initialized
       if (worker && typeof worker === 'object' && 'worker' in worker) {
         const innerWorker = (worker as any).worker;
         if (innerWorker && typeof innerWorker.isRunning === 'function') {
           const isRunning = innerWorker.isRunning();
-          console.log(`${LOG_PREFIX}     Status: ${isRunning ? 'running' : 'not running'}`);
+          console.log(
+            `${LOG_PREFIX}     Status: ${isRunning ? 'running' : 'not running'}`,
+          );
         }
       }
     } catch (error) {
@@ -126,7 +141,9 @@ async function start() {
     if (gmailWorker) {
       console.log(`${LOG_PREFIX} ✅ Gmail event worker initialized`);
     } else {
-      console.warn(`${LOG_PREFIX} ⚠️ Gmail event worker not found in workers array`);
+      console.warn(
+        `${LOG_PREFIX} ⚠️ Gmail event worker not found in workers array`,
+      );
     }
   } catch (error) {
     console.error(`${LOG_PREFIX} Error verifying Gmail event worker:`, error);
@@ -144,4 +161,3 @@ start().catch((error) => {
   console.error(`${LOG_PREFIX} Failed to start worker service:`, error);
   process.exit(1);
 });
-

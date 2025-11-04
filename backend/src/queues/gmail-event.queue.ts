@@ -37,4 +37,3 @@ export interface GmailEventJobData {
   receivedAt: string;
   channelId?: string;
 }
-

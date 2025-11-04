@@ -287,7 +287,10 @@ export class PubSubService implements OnModuleInit {
    * Create a push subscription for a topic
    * Returns the subscription path
    */
-  async createSubscription(userId: number, topicPath: string): Promise<string> {
+  async createSubscription(
+    userId: number,
+    _topicPath: string,
+  ): Promise<string> {
     if (!this.isAvailable()) {
       throw new Error(
         'Pub/Sub is not available. Please set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS',

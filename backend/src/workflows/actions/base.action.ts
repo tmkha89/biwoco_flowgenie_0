@@ -1,4 +1,7 @@
-import { IActionHandler, ExecutionContext } from '../interfaces/workflow.interface';
+import {
+  IActionHandler,
+  ExecutionContext,
+} from '../interfaces/workflow.interface';
 
 /**
  * Base class for action handlers
@@ -11,12 +14,15 @@ export abstract class BaseActionHandler implements IActionHandler {
   /**
    * Execute the action
    */
-  abstract execute(context: ExecutionContext, config: Record<string, any>): Promise<any>;
+  abstract execute(
+    context: ExecutionContext,
+    config: Record<string, any>,
+  ): Promise<any>;
 
   /**
    * Validate action configuration
    */
-  validateConfig(config: Record<string, any>): boolean {
+  validateConfig(_config: Record<string, any>): boolean {
     // Override in subclasses for specific validation
     return true;
   }
@@ -35,4 +41,3 @@ export abstract class BaseActionHandler implements IActionHandler {
     return context.triggerData;
   }
 }
-

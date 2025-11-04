@@ -33,7 +33,9 @@ export class WorkflowWorker {
    */
   private setupEventHandlers(): void {
     this.worker.on('completed', (job: Job) => {
-      console.log(`[WorkflowWorker] Job ${job.id} completed for execution ${job.data.executionId}`);
+      console.log(
+        `[WorkflowWorker] Job ${job.id} completed for execution ${job.data.executionId}`,
+      );
     });
 
     this.worker.on('failed', (job: Job | undefined, error: Error) => {
@@ -69,7 +71,10 @@ export class WorkflowWorker {
     try {
       await this.executionService.execute(executionId);
     } catch (error) {
-      console.error(`[WorkflowWorker] Error executing workflow ${executionId}:`, error);
+      console.error(
+        `[WorkflowWorker] Error executing workflow ${executionId}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -94,4 +99,3 @@ export class WorkflowWorker {
 
 // Export singleton instance
 export const workflowWorker = new WorkflowWorker();
-

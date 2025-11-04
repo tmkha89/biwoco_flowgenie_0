@@ -35,4 +35,3 @@ export class JwtService {
     return parseInt(expiresIn) || 3600;
   }
 }
-

@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsBoolean, IsArray, ValidateNested, IsEnum, IsObject, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsEnum,
+  IsObject,
+  IsNumber,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { TriggerType } from '../interfaces/workflow.interface';
 
@@ -82,4 +91,3 @@ export class CreateWorkflowDto {
   @Type(() => CreateActionDto)
   actions: CreateActionDto[];
 }
-

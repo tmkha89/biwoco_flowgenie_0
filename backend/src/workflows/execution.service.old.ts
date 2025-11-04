@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundException, ExecutionException } from '../common/exceptions/custom-exceptions';
+import { NotFoundException } from '../common/exceptions/custom-exceptions';
 import { ExecutionRepository } from './repositories/execution.repository';
 import { ActionRegistry } from './actions/action.registry';
-import { ExecutionContext, ExecutionStepStatus, WorkflowStatus } from './interfaces/workflow.interface';
+import {
+  ExecutionContext,
+  ExecutionStepStatus,
+  WorkflowStatus,
+} from './interfaces/workflow.interface';
 
 @Injectable()
 export class ExecutionService {
@@ -25,17 +29,23 @@ export class ExecutionService {
     return execution;
   }
 
-  async findByWorkflowId(workflowId: number, options?: {
-    limit?: number;
-    offset?: number;
-  }) {
+  async findByWorkflowId(
+    workflowId: number,
+    options?: {
+      limit?: number;
+      offset?: number;
+    },
+  ) {
     return this.executionRepository.findByWorkflowId(workflowId, options);
   }
 
-  async findByUserId(userId: number, options?: {
-    limit?: number;
-    offset?: number;
-  }) {
+  async findByUserId(
+    userId: number,
+    options?: {
+      limit?: number;
+      offset?: number;
+    },
+  ) {
     return this.executionRepository.findByUserId(userId, options);
   }
 
@@ -89,7 +99,9 @@ export class ExecutionService {
       // Execute each action in order
       for (let i = 0; i < executionSteps.length; i++) {
         const step = executionSteps[i];
-        const action = execution.workflow.actions.find((a) => a.id === step.actionId);
+        const action = execution.workflow.actions.find(
+          (a) => a.id === step.actionId,
+        );
 
         if (!action) {
           continue;
@@ -112,7 +124,10 @@ export class ExecutionService {
           }
 
           // Execute action
-          const output = await handler.execute(context, action.config as Record<string, any>);
+          const output = await handler.execute(
+            context,
+            action.config as Record<string, any>,
+          );
 
           // Store step result
           context.stepResults[action.id] = output;
@@ -126,7 +141,10 @@ export class ExecutionService {
         } catch (error) {
           // Handle retry logic
           const retryCount = step.retryCount + 1;
-          const retryConfig = action.retryConfig as { attempts: number; backoff: { type: string; delay: number } } | null;
+          const retryConfig = action.retryConfig as {
+            attempts: number;
+            backoff: { type: string; delay: number };
+          } | null;
 
           const maxAttempts = retryConfig?.attempts || 3;
 
@@ -140,9 +158,10 @@ export class ExecutionService {
 
             // Wait before retry (exponential backoff)
             const delay = retryConfig?.backoff?.delay || 1000;
-            const backoffDelay = retryConfig?.backoff?.type === 'exponential'
-              ? delay * Math.pow(2, retryCount - 1)
-              : delay;
+            const backoffDelay =
+              retryConfig?.backoff?.type === 'exponential'
+                ? delay * Math.pow(2, retryCount - 1)
+                : delay;
 
             await new Promise((resolve) => setTimeout(resolve, backoffDelay));
 
@@ -187,4 +206,3 @@ export class ExecutionService {
     }
   }
 }
-

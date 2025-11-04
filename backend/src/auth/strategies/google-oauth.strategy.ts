@@ -13,10 +13,13 @@ export class GoogleOAuthStrategy extends PassportStrategy(Strategy, 'google') {
     const callbackURL = configService.get<string>('GOOGLE_REDIRECT_URI', '');
 
     // Check if all credentials are provided
-    const hasAllCredentials = 
-      clientID && clientID.trim() !== '' &&
-      clientSecret && clientSecret.trim() !== '' &&
-      callbackURL && callbackURL.trim() !== '';
+    const hasAllCredentials =
+      clientID &&
+      clientID.trim() !== '' &&
+      clientSecret &&
+      clientSecret.trim() !== '' &&
+      callbackURL &&
+      callbackURL.trim() !== '';
 
     // super() must be called first and be at root level
     // Use actual credentials if available, otherwise use dummy values
@@ -48,7 +51,9 @@ export class GoogleOAuthStrategy extends PassportStrategy(Strategy, 'google') {
     // If OAuth is disabled, reject authentication
     if (!this.isEnabled) {
       return done(
-        new Error('Google OAuth is not configured. Please set required environment variables.'),
+        new Error(
+          'Google OAuth is not configured. Please set required environment variables.',
+        ),
         null,
       );
     }
@@ -66,4 +71,3 @@ export class GoogleOAuthStrategy extends PassportStrategy(Strategy, 'google') {
     done(null, user);
   }
 }
-

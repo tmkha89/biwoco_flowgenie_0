@@ -14,7 +14,8 @@ export class WebhookTriggerHandler implements ITriggerHandler {
   readonly type: TriggerType = TriggerType.WEBHOOK;
   readonly name = 'Webhook Trigger';
 
-  private registeredWebhooks: Map<number, { path: string; secret?: string }> = new Map();
+  private registeredWebhooks: Map<number, { path: string; secret?: string }> =
+    new Map();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -29,12 +30,15 @@ export class WebhookTriggerHandler implements ITriggerHandler {
     return true;
   }
 
-  async register(workflowId: number, config: Record<string, any>): Promise<void> {
+  async register(
+    workflowId: number,
+    config: Record<string, any>,
+  ): Promise<void> {
     this.logger.log(`Registering webhook trigger for workflow ${workflowId}`);
-    
+
     // Generate a unique webhook ID if not provided
     const webhookId = config.webhookId || `webhook-${workflowId}-${Date.now()}`;
-    
+
     // Store webhook info
     this.registeredWebhooks.set(workflowId, {
       path: config.path || webhookId,
@@ -53,7 +57,9 @@ export class WebhookTriggerHandler implements ITriggerHandler {
       },
     });
 
-    this.logger.log(`Webhook trigger registered for workflow ${workflowId}, webhookId: ${webhookId}`);
+    this.logger.log(
+      `Webhook trigger registered for workflow ${workflowId}, webhookId: ${webhookId}`,
+    );
   }
 
   async unregister(workflowId: number): Promise<void> {
@@ -82,7 +88,11 @@ export class WebhookTriggerHandler implements ITriggerHandler {
   /**
    * Handle webhook request and trigger workflow
    */
-  async handleWebhookRequest(webhookId: string, payload: any, headers?: Record<string, string>): Promise<void> {
+  async handleWebhookRequest(
+    webhookId: string,
+    payload: any,
+    headers?: Record<string, string>,
+  ): Promise<void> {
     this.logger.log(`Handling webhook request for webhookId: ${webhookId}`);
 
     // Find workflow by webhookId
@@ -101,7 +111,7 @@ export class WebhookTriggerHandler implements ITriggerHandler {
       if (config.webhookId === webhookId) {
         workflowId = trigger.workflowId;
         secret = config.secret;
-        
+
         // Update memory cache
         this.registeredWebhooks.set(workflowId, {
           path: config.path || webhookId,
@@ -118,7 +128,10 @@ export class WebhookTriggerHandler implements ITriggerHandler {
 
     // Validate secret if required
     if (secret) {
-      const providedSecret = headers?.['x-webhook-secret'] || headers?.['x-secret'] || payload?.secret;
+      const providedSecret =
+        headers?.['x-webhook-secret'] ||
+        headers?.['x-secret'] ||
+        payload?.secret;
       if (providedSecret !== secret) {
         this.logger.warn(`Invalid secret for webhook ${webhookId}`);
         throw new Error('Invalid webhook secret');
@@ -126,7 +139,9 @@ export class WebhookTriggerHandler implements ITriggerHandler {
     }
 
     // Emit workflow trigger event
-    this.logger.log(`Triggering workflow ${workflowId} via webhook ${webhookId}`);
+    this.logger.log(
+      `Triggering workflow ${workflowId} via webhook ${webhookId}`,
+    );
     this.workflowEventService.emitWorkflowTrigger(workflowId, {
       triggerType: TriggerType.WEBHOOK,
       webhookId,
@@ -150,16 +165,18 @@ export class WebhookTriggerHandler implements ITriggerHandler {
       const trigger = await this.prisma.trigger.findUnique({
         where: { workflowId },
       });
-      
+
       if (trigger) {
         const config = trigger.config as any;
-        return config.webhookUrl || `/api/triggers/webhook/${config.webhookId || webhook.path}`;
+        return (
+          config.webhookUrl ||
+          `/api/triggers/webhook/${config.webhookId || webhook.path}`
+        );
       }
-      
+
       return `/api/triggers/webhook/${webhook.path}`;
     } catch (error) {
       return `/api/triggers/webhook/${webhook.path}`;
     }
   }
 }
-

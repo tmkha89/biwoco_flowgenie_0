@@ -26,7 +26,7 @@ export class GmailEventWorker {
   constructor() {
     try {
       console.log('[GmailEventWorker] Initializing Gmail event worker...');
-      
+
       this.worker = new Worker(
         'gmail-event',
         async (job: Job<GmailEventJobData>) => {
@@ -39,10 +39,15 @@ export class GmailEventWorker {
       );
 
       this.setupEventHandlers();
-      
-      console.log('[GmailEventWorker] ✅ Gmail event worker initialized successfully');
+
+      console.log(
+        '[GmailEventWorker] ✅ Gmail event worker initialized successfully',
+      );
     } catch (error: any) {
-      console.error('[GmailEventWorker] ❌ Failed to initialize Gmail event worker:', error);
+      console.error(
+        '[GmailEventWorker] ❌ Failed to initialize Gmail event worker:',
+        error,
+      );
       throw error;
     }
   }
@@ -52,11 +57,15 @@ export class GmailEventWorker {
    */
   private setupEventHandlers(): void {
     this.worker.on('completed', (job: Job) => {
-      console.log(`[GmailEventWorker] ✅ Job ${job.id} completed for workflow ${job.data.workflowId}`);
+      console.log(
+        `[GmailEventWorker] ✅ Job ${job.id} completed for workflow ${job.data.workflowId}`,
+      );
     });
 
     this.worker.on('active', (job: Job) => {
-      console.log(`[GmailEventWorker] 🔄 Job ${job.id} started processing for workflow ${job.data.workflowId}`);
+      console.log(
+        `[GmailEventWorker] 🔄 Job ${job.id} started processing for workflow ${job.data.workflowId}`,
+      );
     });
 
     this.worker.on('failed', (job: Job | undefined, error: Error) => {
@@ -88,23 +97,23 @@ export class GmailEventWorker {
     if (!this.appContext) {
       this.appContext = await NestFactory.createApplicationContext(AppModule);
     }
-    
+
     if (!this.prisma) {
       this.prisma = this.appContext.get(PrismaService);
     }
-    
+
     if (!this.workflowEventService) {
       this.workflowEventService = this.appContext.get(WorkflowEventService);
     }
-    
+
     if (!this.gmailService) {
       this.gmailService = this.appContext.get(GmailService);
     }
-    
+
     if (!this.oauthService) {
       this.oauthService = this.appContext.get(OAuthService);
     }
-    
+
     if (!this.googleOAuthService) {
       this.googleOAuthService = this.appContext.get(GoogleOAuthService);
     }
@@ -114,16 +123,32 @@ export class GmailEventWorker {
    * Process a Gmail event job
    */
   private async processJob(job: Job<GmailEventJobData>): Promise<void> {
-    const { workflowId, userId, messageId, threadId, labelIds, snippet, historyId } = job.data;
+    const {
+      workflowId,
+      userId,
+      messageId,
+      threadId,
+      labelIds,
+      snippet,
+      historyId,
+    } = job.data;
 
     await this.initializeServices();
 
-    if (!this.prisma || !this.workflowEventService || !this.gmailService || !this.oauthService || !this.googleOAuthService) {
+    if (
+      !this.prisma ||
+      !this.workflowEventService ||
+      !this.gmailService ||
+      !this.oauthService ||
+      !this.googleOAuthService
+    ) {
       throw new Error('Failed to initialize services');
     }
 
     try {
-      console.log(`[GmailEventWorker] Processing Gmail event for workflow ${workflowId}, message ${messageId}`);
+      console.log(
+        `[GmailEventWorker] Processing Gmail event for workflow ${workflowId}, message ${messageId}`,
+      );
 
       // Verify workflow exists and is enabled
       const workflow = await this.prisma.workflow.findUnique({
@@ -137,31 +162,47 @@ export class GmailEventWorker {
       }
 
       if (!workflow.enabled) {
-        console.warn(`[GmailEventWorker] Workflow ${workflowId} is disabled, skipping`);
+        console.warn(
+          `[GmailEventWorker] Workflow ${workflowId} is disabled, skipping`,
+        );
         return;
       }
 
-      if (!workflow.trigger || workflow.trigger.type !== TriggerType.GOOGLE_MAIL) {
-        console.error(`[GmailEventWorker] Workflow ${workflowId} does not have Gmail trigger`);
+      if (
+        !workflow.trigger ||
+        workflow.trigger.type !== TriggerType.GOOGLE_MAIL
+      ) {
+        console.error(
+          `[GmailEventWorker] Workflow ${workflowId} does not have Gmail trigger`,
+        );
         return;
       }
 
       // Get and refresh OAuth tokens if needed
-      let oauthAccount = await this.oauthService.findByUserIdAndProvider(userId, 'google');
-      
+      let oauthAccount = await this.oauthService.findByUserIdAndProvider(
+        userId,
+        'google',
+      );
+
       if (!oauthAccount || !oauthAccount.accessToken) {
-        console.error(`[GmailEventWorker] No Google OAuth tokens found for user ${userId}`);
+        console.error(
+          `[GmailEventWorker] No Google OAuth tokens found for user ${userId}`,
+        );
         return;
       }
 
       // Refresh token if expired
       if (oauthAccount.expiresAt && oauthAccount.expiresAt < new Date()) {
         if (!oauthAccount.refreshToken) {
-          console.error(`[GmailEventWorker] Access token expired and no refresh token available for user ${userId}`);
+          console.error(
+            `[GmailEventWorker] Access token expired and no refresh token available for user ${userId}`,
+          );
           return;
         }
 
-        console.log(`[GmailEventWorker] Refreshing expired access token for user ${userId}`);
+        console.log(
+          `[GmailEventWorker] Refreshing expired access token for user ${userId}`,
+        );
         oauthAccount = await this.oauthService.refreshGoogleTokens(
           userId,
           oauthAccount.refreshToken,
@@ -172,16 +213,23 @@ export class GmailEventWorker {
       // Fetch full message content if needed
       let messageContent: any = null;
       try {
-        messageContent = await this.gmailService.getMessage(oauthAccount.accessToken!, messageId);
+        messageContent = await this.gmailService.getMessage(
+          oauthAccount.accessToken!,
+          messageId,
+        );
       } catch (error: any) {
-        console.warn(`[GmailEventWorker] Failed to fetch full message content: ${error.message}`);
+        console.warn(
+          `[GmailEventWorker] Failed to fetch full message content: ${error.message}`,
+        );
         // Continue with available data
       }
 
       // Extract message metadata
       const headers = messageContent?.payload?.headers || [];
       const getHeader = (name: string) => {
-        const header = headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase());
+        const header = headers.find(
+          (h: any) => h.name?.toLowerCase() === name.toLowerCase(),
+        );
         return header?.value || '';
       };
 
@@ -202,14 +250,16 @@ export class GmailEventWorker {
         subject,
         date,
         to,
-        messageContent: messageContent ? {
-          id: messageContent.id,
-          threadId: messageContent.threadId,
-          labelIds: messageContent.labelIds,
-          snippet: messageContent.snippet,
-          sizeEstimate: messageContent.sizeEstimate,
-          historyId: messageContent.historyId,
-        } : null,
+        messageContent: messageContent
+          ? {
+              id: messageContent.id,
+              threadId: messageContent.threadId,
+              labelIds: messageContent.labelIds,
+              snippet: messageContent.snippet,
+              sizeEstimate: messageContent.sizeEstimate,
+              historyId: messageContent.historyId,
+            }
+          : null,
       };
 
       // Emit workflow trigger event
@@ -229,7 +279,9 @@ export class GmailEventWorker {
         },
       });
 
-      console.log(`[GmailEventWorker] Successfully triggered workflow ${workflowId} for message ${messageId}`);
+      console.log(
+        `[GmailEventWorker] Successfully triggered workflow ${workflowId} for message ${messageId}`,
+      );
     } catch (error: any) {
       console.error(`[GmailEventWorker] Error processing Gmail event:`, error);
       throw error;
@@ -261,7 +313,10 @@ try {
   gmailEventWorkerInstance = new GmailEventWorker();
   console.log('[GmailEventWorker] ✅ Gmail event worker singleton created');
 } catch (error: any) {
-  console.error('[GmailEventWorker] ❌ Failed to create Gmail event worker singleton:', error);
+  console.error(
+    '[GmailEventWorker] ❌ Failed to create Gmail event worker singleton:',
+    error,
+  );
   console.error('[GmailEventWorker] Error stack:', error.stack);
   // Create a dummy worker to prevent import errors
   gmailEventWorkerInstance = {
@@ -271,4 +326,3 @@ try {
 }
 
 export const gmailEventWorker = gmailEventWorkerInstance;
-

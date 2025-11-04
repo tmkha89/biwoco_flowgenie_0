@@ -17,7 +17,10 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
 import { UpdateWorkflowDto } from './dto/update-workflow.dto';
 import { TriggerWorkflowDto } from './dto/trigger-workflow.dto';
-import { WorkflowResponseDto, ExecutionResponseDto } from './dto/workflow-response.dto';
+import {
+  WorkflowResponseDto,
+  ExecutionResponseDto,
+} from './dto/workflow-response.dto';
 import { plainToInstance } from 'class-transformer';
 
 /**
@@ -89,7 +92,9 @@ export class WorkflowController {
     @Body() createDto: CreateWorkflowDto,
   ): Promise<WorkflowResponseDto> {
     const workflow = await this.workflowService.create(userId, createDto);
-    return plainToInstance(WorkflowResponseDto, workflow, { excludeExtraneousValues: true });
+    return plainToInstance(WorkflowResponseDto, workflow, {
+      excludeExtraneousValues: true,
+    });
   }
 
   /**
@@ -131,7 +136,9 @@ export class WorkflowController {
       enabled: enabled !== undefined ? enabled === 'true' : undefined,
     });
     return workflows.map((workflow) =>
-      plainToInstance(WorkflowResponseDto, workflow, { excludeExtraneousValues: true }),
+      plainToInstance(WorkflowResponseDto, workflow, {
+        excludeExtraneousValues: true,
+      }),
     );
   }
 
@@ -174,7 +181,9 @@ export class WorkflowController {
     @Param('id', ParseIntPipe) id: number,
   ): Promise<WorkflowResponseDto> {
     const workflow = await this.workflowService.findById(id, userId);
-    return plainToInstance(WorkflowResponseDto, workflow, { excludeExtraneousValues: true });
+    return plainToInstance(WorkflowResponseDto, workflow, {
+      excludeExtraneousValues: true,
+    });
   }
 
   /**
@@ -237,7 +246,9 @@ export class WorkflowController {
     @Body() updateDto: UpdateWorkflowDto,
   ): Promise<WorkflowResponseDto> {
     const workflow = await this.workflowService.update(id, userId, updateDto);
-    return plainToInstance(WorkflowResponseDto, workflow, { excludeExtraneousValues: true });
+    return plainToInstance(WorkflowResponseDto, workflow, {
+      excludeExtraneousValues: true,
+    });
   }
 
   /**
@@ -337,8 +348,14 @@ export class WorkflowController {
     @Param('id', ParseIntPipe) id: number,
     @Body() triggerDto: TriggerWorkflowDto,
   ): Promise<ExecutionResponseDto> {
-    const execution = await this.workflowService.trigger(id, userId, triggerDto.triggerData);
-    return plainToInstance(ExecutionResponseDto, execution, { excludeExtraneousValues: true });
+    const execution = await this.workflowService.trigger(
+      id,
+      userId,
+      triggerDto.triggerData,
+    );
+    return plainToInstance(ExecutionResponseDto, execution, {
+      excludeExtraneousValues: true,
+    });
   }
 
   /**
@@ -404,7 +421,9 @@ export class WorkflowController {
     });
 
     return executions.map((execution) =>
-      plainToInstance(ExecutionResponseDto, execution, { excludeExtraneousValues: true }),
+      plainToInstance(ExecutionResponseDto, execution, {
+        excludeExtraneousValues: true,
+      }),
     );
   }
 
@@ -455,7 +474,9 @@ export class WorkflowController {
     });
 
     return executions.map((execution) =>
-      plainToInstance(ExecutionResponseDto, execution, { excludeExtraneousValues: true }),
+      plainToInstance(ExecutionResponseDto, execution, {
+        excludeExtraneousValues: true,
+      }),
     );
   }
 
@@ -498,6 +519,8 @@ export class WorkflowController {
     @Param('executionId', ParseIntPipe) executionId: number,
   ): Promise<ExecutionResponseDto> {
     const execution = await this.executionService.findById(executionId, userId);
-    return plainToInstance(ExecutionResponseDto, execution, { excludeExtraneousValues: true });
+    return plainToInstance(ExecutionResponseDto, execution, {
+      excludeExtraneousValues: true,
+    });
   }
 }

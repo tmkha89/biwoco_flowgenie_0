@@ -120,7 +120,9 @@ import { ParallelActionHandler } from './actions/parallel.action';
           });
         } catch (error) {
           // If Redis is not available, return null
-          console.warn('Failed to create schedule queue, using in-memory scheduling only');
+          console.warn(
+            'Failed to create schedule queue, using in-memory scheduling only',
+          );
           return null;
         }
       },
@@ -215,7 +217,13 @@ import { ParallelActionHandler } from './actions/parallel.action';
       ],
     },
   ],
-  exports: [WorkflowService, ExecutionService, ActionRegistry, TriggerRegistry, GoogleMailTriggerHandler],
+  exports: [
+    WorkflowService,
+    ExecutionService,
+    ActionRegistry,
+    TriggerRegistry,
+    GoogleMailTriggerHandler,
+  ],
 })
 export class WorkflowModule {
   constructor(
@@ -224,7 +232,10 @@ export class WorkflowModule {
     private readonly triggerRegistry: TriggerRegistry,
   ) {
     // Log registered handlers on module initialization
-    console.log('[WorkflowModule] Registered action types:', this.actionRegistry.getRegisteredTypes());
+    console.log(
+      '[WorkflowModule] Registered action types:',
+      this.actionRegistry.getRegisteredTypes(),
+    );
   }
 
   async onModuleDestroy() {
@@ -232,4 +243,3 @@ export class WorkflowModule {
     await this.workflowQueue.close();
   }
 }
-
