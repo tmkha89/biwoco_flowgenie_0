@@ -90,7 +90,7 @@ describe('AuthController', () => {
 
       expect(authService.connectGoogleAccount).not.toHaveBeenCalled();
       expect(mockResponse.redirect).toHaveBeenCalledWith(
-        expect.stringContaining('http://localhost:5173/dashboard?googleError='),
+        expect.stringContaining('http://localhost:5173/login?googleError='),
       );
       expect(mockResponse.redirect).toHaveBeenCalledWith(
         expect.stringContaining(encodeURIComponent('OAuth error: access_denied')),
@@ -107,7 +107,7 @@ describe('AuthController', () => {
 
       expect(authService.connectGoogleAccount).not.toHaveBeenCalled();
       expect(mockResponse.redirect).toHaveBeenCalledWith(
-        expect.stringContaining('http://localhost:5173/dashboard?googleError='),
+        expect.stringContaining('http://localhost:5173/login?googleError='),
       );
       expect(mockResponse.redirect).toHaveBeenCalledWith(
         expect.stringContaining(encodeURIComponent('Authorization code is missing')),

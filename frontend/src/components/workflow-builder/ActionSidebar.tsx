@@ -90,15 +90,9 @@ const ActionSidebar = () => {
         <p className="text-xs text-gray-600 mt-1">Click or drag actions to canvas</p>
       </div>
       <div className="p-3">
-        <div className="mb-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Basic Actions</h3>
-          {ACTION_TYPES.filter((a) => !['conditional', 'loop', 'parallel'].includes(a.type)).map((actionType) => (
-            <DraggableActionItem key={actionType.type} actionType={actionType} />
-          ))}
-        </div>
         <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Control Flow</h3>
-          {ACTION_TYPES.filter((a) => ['loop', 'parallel'].includes(a.type)).map((actionType) => (
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Actions</h3>
+          {ACTION_TYPES.map((actionType) => (
             <DraggableActionItem key={actionType.type} actionType={actionType} />
           ))}
         </div>

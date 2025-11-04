@@ -290,12 +290,14 @@ const DashboardPage = () => {
                     >
                       Edit
                     </Link>
-                    <Link
-                      to={`/workflows/${workflow.id}/execute`}
-                      className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm text-center hover:bg-green-700"
-                    >
-                      Run
-                    </Link>
+                    {workflow.trigger?.type !== 'google-mail' && workflow.trigger?.type !== 'webhook' && (
+                      <Link
+                        to={`/workflows/${workflow.id}/execute`}
+                        className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm text-center hover:bg-green-700"
+                      >
+                        Run
+                      </Link>
+                    )}
                   </div>
                 </div>
               ))}

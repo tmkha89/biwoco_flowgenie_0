@@ -35,9 +35,11 @@ describe('UsersController', () => {
       const expectedUser = {
         id: 1,
         email: 'test@example.com',
+        username: 'testuser',
         name: 'Test User',
         avatar: 'https://example.com/avatar.jpg',
         password: 'hashedpassword',
+        googleLinked: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

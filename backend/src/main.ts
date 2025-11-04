@@ -13,7 +13,7 @@ if (require('fs').existsSync(envLocalPath)) {
 }
 
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger, LogLevel } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/exceptions/http-exception.filter';
@@ -51,6 +51,12 @@ async function bootstrap() {
   }
 
   // Create app with HTTPS options if certs are available
+  // Enable console logger to output all logs to terminal
+  const logger = new Logger('Bootstrap');
+  const loggerOptions = {
+    logger: ['log', 'error', 'warn', 'debug', 'verbose'] as LogLevel[], // Enable all log levels
+  };
+  
   let app;
   if (certFile && keyFile) {
     try {
@@ -58,15 +64,21 @@ async function bootstrap() {
         key: fs.readFileSync(keyFile),
         cert: fs.readFileSync(certFile),
       };
-      app = await NestFactory.create(AppModule, { httpsOptions });
-      console.log('🔒 HTTPS enabled with local certificates');
+      app = await NestFactory.create(AppModule, { 
+        httpsOptions,
+        ...loggerOptions,
+      });
+      logger.log('🔒 HTTPS enabled with local certificates');
     } catch (error) {
-      console.warn('⚠️  Failed to load HTTPS certs, starting HTTP server');
-      app = await NestFactory.create(AppModule);
+      logger.warn('⚠️  Failed to load HTTPS certs, starting HTTP server');
+      app = await NestFactory.create(AppModule, loggerOptions);
     }
   } else {
-    app = await NestFactory.create(AppModule);
+    app = await NestFactory.create(AppModule, loggerOptions);
   }
+  
+  // Use the default logger to ensure all logs go to console
+  app.useLogger(new Logger());
 
   // Enable CORS for OAuth callbacks and Swagger UI
   const allowedOrigins = process.env.CORS_ORIGINS 

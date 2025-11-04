@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService } from './services/jwt.service';
 import { RefreshTokenService } from './services/refresh-token.service';
 import { GoogleOAuthService } from './services/google-oauth.service';
@@ -15,6 +16,7 @@ export class AuthService {
     private googleOAuthService: GoogleOAuthService,
     private usersService: UsersService,
     private oAuthService: OAuthService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   getGoogleAuthUrl(): string {
@@ -234,6 +236,16 @@ export class AuthService {
     console.log(`🔄 [AuthService] connectGoogleAccount - Marking user ${userId} as googleLinked=true`);
     await this.usersService.updateUser(userId, { googleLinked: true });
     console.log(`✅ [AuthService] connectGoogleAccount - User ${userId} marked as Google linked`);
+
+    // Emit event for Gmail trigger auto-registration
+    // The workflow module will listen to this event and auto-register Gmail triggers
+    try {
+      this.eventEmitter.emit('google.account.connected', { userId });
+      console.log(`✅ [AuthService] connectGoogleAccount - Emitted google.account.connected event for user ${userId}`);
+    } catch (error: any) {
+      console.warn(`⚠️ [AuthService] connectGoogleAccount - Failed to emit event: ${error.message}`);
+      // Don't fail the connection if event emission fails
+    }
 
     console.log(`✅ [AuthService] connectGoogleAccount - Google account connection completed successfully for user ${userId}`);
     return {

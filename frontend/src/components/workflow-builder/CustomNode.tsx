@@ -82,24 +82,7 @@ const CustomNode = ({ data, selected }: CustomNodeProps) => {
           className="!bg-green-500 !w-4 !h-4 !border-2 !border-white"
           style={{ zIndex: 10 }}
         />
-      ) : data.type === 'conditional' ? (
-        <>
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="true"
-            className="!bg-green-500 !w-4 !h-4 !border-2 !border-white"
-            style={{ left: '30%', zIndex: 10 }}
-          />
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="false"
-            className="!bg-red-500 !w-4 !h-4 !border-2 !border-white"
-            style={{ left: '70%', zIndex: 10 }}
-          />
-        </>
-      ) : data.type === 'parallel' || data.type === 'loop' ? (
+      ) : data.type === 'parallel' ? (
         <Handle
           type="source"
           position={Position.Bottom}

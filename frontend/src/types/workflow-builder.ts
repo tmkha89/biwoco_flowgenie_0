@@ -8,8 +8,6 @@ export enum ActionType {
   HTTP_REQUEST = 'http_request',
   EMAIL = 'email',
   WAIT = 'wait',
-  CONDITIONAL = 'conditional',
-  LOOP = 'loop',
   PARALLEL = 'parallel',
   EXAMPLE = 'example_action',
 }
@@ -57,31 +55,6 @@ export const ACTION_TYPES: ActionTypeConfig[] = [
     color: 'bg-yellow-500',
     defaultConfig: {
       duration: '5s',
-    },
-  },
-  {
-    type: ActionType.CONDITIONAL,
-    name: 'Conditional',
-    description: 'Branch execution based on a condition',
-    icon: '🔀',
-    color: 'bg-purple-500',
-    defaultConfig: {
-      condition: '',
-      trueActionId: null,
-      falseActionId: null,
-    },
-  },
-  {
-    type: ActionType.LOOP,
-    name: 'Loop',
-    description: 'Iterate over items and execute sub-actions',
-    icon: '🔄',
-    color: 'bg-orange-500',
-    defaultConfig: {
-      items: [],
-      itemsPath: '',
-      itemVariable: 'item',
-      loopActionId: null,
     },
   },
   {

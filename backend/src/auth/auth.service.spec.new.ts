@@ -4,9 +4,10 @@ import { AuthService } from './auth.service';
 import { JwtService } from './services/jwt.service';
 import { RefreshTokenService } from './services/refresh-token.service';
 import { GoogleOAuthService } from './services/google-oauth.service';
-import { SlackService } from '../slack/slack.service';
 import { UsersService } from '../users/users.service';
 import { OAuthService } from '../oauth/oauth.service';
+import * as jest from 'jest-mock';
+import * as bcrypt from 'bcrypt';
 
 // Mock bcrypt module
 jest.mock('bcrypt', () => ({
@@ -15,14 +16,11 @@ jest.mock('bcrypt', () => ({
   genSalt: jest.fn(),
 }));
 
-import * as bcrypt from 'bcrypt';
-
 describe('AuthService (Updated)', () => {
   let service: AuthService;
   let jwtService: jest.Mocked<JwtService>;
   let refreshTokenService: jest.Mocked<RefreshTokenService>;
   let googleOAuthService: jest.Mocked<GoogleOAuthService>;
-  let slackService: jest.Mocked<SlackService>;
   let usersService: jest.Mocked<UsersService>;
   let oAuthService: jest.Mocked<OAuthService>;
 
@@ -47,12 +45,6 @@ describe('AuthService (Updated)', () => {
       refreshAccessToken: jest.fn(),
     };
 
-    const mockSlackService = {
-      getAuthorizationUrl: jest.fn(),
-      exchangeCodeForTokens: jest.fn(),
-      storeTokens: jest.fn(),
-      getAccessToken: jest.fn(),
-    };
 
     const mockUsersService = {
       createOrUpdate: jest.fn(),
@@ -84,10 +76,6 @@ describe('AuthService (Updated)', () => {
           useValue: mockGoogleOAuthService,
         },
         {
-          provide: SlackService,
-          useValue: mockSlackService,
-        },
-        {
           provide: UsersService,
           useValue: mockUsersService,
         },
@@ -102,7 +90,6 @@ describe('AuthService (Updated)', () => {
     jwtService = module.get(JwtService);
     refreshTokenService = module.get(RefreshTokenService);
     googleOAuthService = module.get(GoogleOAuthService);
-    slackService = module.get(SlackService);
     usersService = module.get(UsersService);
     oAuthService = module.get(OAuthService);
   });
@@ -372,82 +359,18 @@ describe('AuthService (Updated)', () => {
     });
   });
 
-  describe('OAuth - Slack', () => {
-    it('should handle Slack OAuth login for new user', async () => {
-      const mockTokens = {
-        accessToken: 'slack_access_token',
-        refreshToken: 'slack_refresh_token',
-        expiresIn: 3600,
-        teamId: 'T123456',
-        userId: 'U123456',
-      };
-
-      const mockUser = {
-        id: 1,
-        username: null,
-        email: 'user@example.com',
-        name: 'John Doe',
-      };
-
-      slackService.exchangeCodeForTokens.mockResolvedValue(mockTokens);
-      slackService.storeTokens.mockResolvedValue({} as any);
-      usersService.findByEmail.mockResolvedValue(null);
-      usersService.createUser.mockResolvedValue(mockUser as any);
-      jwtService.generateAccessToken.mockResolvedValue('access_token');
-      refreshTokenService.generateRefreshToken.mockResolvedValue('refresh_token');
-
-      const result = await service.oauthLogin('slack', 'auth_code');
-
-      expect(result.access_token).toBe('access_token');
-      expect(slackService.exchangeCodeForTokens).toHaveBeenCalledWith('auth_code');
-    });
-
-    it('should handle Slack OAuth login for existing user (link account)', async () => {
-      const mockTokens = {
-        accessToken: 'slack_access_token',
-        refreshToken: 'slack_refresh_token',
-        expiresIn: 3600,
-        teamId: 'T123456',
-        userId: 'U123456',
-      };
-
-      const mockUser = {
-        id: 1,
-        username: 'john123',
-        email: 'user@example.com',
-      };
-
-      slackService.exchangeCodeForTokens.mockResolvedValue(mockTokens);
-      slackService.storeTokens.mockResolvedValue({} as any);
-      usersService.findById.mockResolvedValue(mockUser as any);
-      jwtService.generateAccessToken.mockResolvedValue('access_token');
-      refreshTokenService.generateRefreshToken.mockResolvedValue('refresh_token');
-
-      // For Slack, we'll link to existing user via userId in state
-      const result = await service.oauthLogin('slack', 'auth_code', 1);
-
-      expect(result.access_token).toBe('access_token');
-      expect(slackService.storeTokens).toHaveBeenCalledWith(
-        1,
-        expect.objectContaining({
-          accessToken: 'slack_access_token',
-        }),
-      );
-    });
-  });
 
   describe('getConnectedProviders', () => {
     it('should return connected providers for user', async () => {
       const mockOAuthAccounts = [
         { provider: 'google', providerUserId: 'google123' },
-        { provider: 'slack', providerUserId: 'slack123' },
       ];
 
       oAuthService.findByUserId.mockResolvedValue(mockOAuthAccounts as any);
 
       const providers = await service.getConnectedProviders(1);
 
-      expect(providers).toEqual(['google', 'slack']);
+      expect(providers).toEqual(['google']);
       expect(oAuthService.findByUserId).toHaveBeenCalledWith(1);
     });
 

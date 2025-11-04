@@ -15,7 +15,7 @@ interface WorkflowToolbarProps {
 
 const WorkflowToolbar = ({ workflowId, onExecute }: WorkflowToolbarProps) => {
   const navigate = useNavigate();
-  const { workflowMeta, nodes, reset } = useWorkflowBuilderStore();
+  const { workflowMeta, nodes, reset, trigger } = useWorkflowBuilderStore();
   const [isSaving, setIsSaving] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,7 +144,7 @@ const WorkflowToolbar = ({ workflowId, onExecute }: WorkflowToolbarProps) => {
         >
           {isSaving ? 'Saving...' : 'Save Workflow'}
         </button>
-        {workflowId && (
+        {workflowId && trigger.type !== 'google-mail' && trigger.type !== 'webhook' && (
           <button
             onClick={handleExecute}
             disabled={isExecuting}

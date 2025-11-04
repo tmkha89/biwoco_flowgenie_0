@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
-import { getWorkflows, deleteWorkflow } from '../api/workflows';
+import { getWorkflows, deleteWorkflow, toggleWorkflow } from '../api/workflows';
 import type { WorkflowResponse } from '../types/workflows';
 
 const WorkflowListPage = () => {
@@ -68,6 +68,19 @@ const WorkflowListPage = () => {
     } catch (err: any) {
       console.error('❌ [WorkflowListPage] Error navigating to execute:', err);
       setError(err.message || 'Failed to execute workflow');
+    }
+  };
+
+  const handleToggle = async (id: number, currentEnabled: boolean) => {
+    console.log('📋 [WorkflowListPage] handleToggle() called', { workflowId: id, currentEnabled });
+    try {
+      const updatedWorkflow = await toggleWorkflow(id, !currentEnabled);
+      console.log('✅ [WorkflowListPage] Workflow toggled', { workflowId: id, enabled: updatedWorkflow.enabled });
+      // Update the workflow in the list
+      setWorkflows(workflows.map(w => w.id === id ? updatedWorkflow : w));
+    } catch (err: any) {
+      console.error('❌ [WorkflowListPage] Error toggling workflow:', err);
+      setError(err.message || 'Failed to toggle workflow');
     }
   };
 
@@ -177,19 +190,32 @@ const WorkflowListPage = () => {
                   <div>Actions: {workflow.actions.length}</div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button
                     onClick={() => navigate(`/workflows/${workflow.id}/edit`)}
                     className="flex-1 bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700"
                   >
                     Edit
                   </button>
+                  {workflow.trigger?.type !== 'google-mail' && workflow.trigger?.type !== 'webhook' && (
+                    <button
+                      onClick={() => handleExecute(workflow.id)}
+                      className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={!workflow.enabled}
+                    >
+                      Run
+                    </button>
+                  )}
                   <button
-                    onClick={() => handleExecute(workflow.id)}
-                    className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm hover:bg-green-700"
-                    disabled={!workflow.enabled}
+                    onClick={() => handleToggle(workflow.id, workflow.enabled)}
+                    className={`flex-1 px-3 py-2 rounded text-sm ${
+                      workflow.enabled
+                        ? 'bg-yellow-600 text-white hover:bg-yellow-700'
+                        : 'bg-gray-600 text-white hover:bg-gray-700'
+                    }`}
+                    title={workflow.enabled ? 'Disable workflow' : 'Enable workflow'}
                   >
-                    Run
+                    {workflow.enabled ? 'Disable' : 'Enable'}
                   </button>
                   <button
                     onClick={() => handleDelete(workflow.id)}

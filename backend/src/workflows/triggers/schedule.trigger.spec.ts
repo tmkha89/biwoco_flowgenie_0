@@ -21,10 +21,23 @@ const mockSchedule = jest.fn((cron, callback, options) => {
   };
 });
 
-jest.mock('node-cron', () => ({
-  schedule: mockSchedule,
-  validate: mockValidate,
-}));
+jest.mock('node-cron', () => {
+  const mockValidate = jest.fn((cron) => {
+    return typeof cron === 'string' && cron.length > 0;
+  });
+  const mockSchedule = jest.fn((cron, callback, options) => {
+    return {
+      start: jest.fn(),
+      stop: jest.fn(),
+      destroy: jest.fn(),
+      getStatus: jest.fn(() => 'scheduled'),
+    };
+  });
+  return {
+    schedule: mockSchedule,
+    validate: mockValidate,
+  };
+});
 
 describe('ScheduleTriggerHandler', () => {
   let handler: ScheduleTriggerHandler;

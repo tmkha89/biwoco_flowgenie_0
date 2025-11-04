@@ -8,8 +8,12 @@ import { TriggerRegistry } from './triggers/trigger.registry';
 import { ActionRegistry } from './actions/action.registry';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
 import { UpdateWorkflowDto } from './dto/update-workflow.dto';
-import { WorkflowStatus } from './interfaces/workflow.interface';
+import { WorkflowStatus, TriggerType } from './interfaces/workflow.interface';
+import { PubSubService } from './services/pubsub.service';
+import { GmailService } from './services/gmail.service';
+import { GoogleOAuthService } from '../auth/services/google-oauth.service';
 import { Queue } from 'bullmq';
+import axios from 'axios';
 
 @Injectable()
 export class WorkflowService {
@@ -23,6 +27,9 @@ export class WorkflowService {
     private readonly actionRegistry: ActionRegistry,
     private readonly prisma: PrismaService,
     @Inject('WORKFLOW_QUEUE') private readonly workflowQueue: Queue,
+    private readonly pubSubService: PubSubService,
+    private readonly gmailService: GmailService,
+    private readonly googleOAuthService: GoogleOAuthService,
   ) {}
 
   async create(userId: number, createDto: CreateWorkflowDto) {
@@ -41,6 +48,12 @@ export class WorkflowService {
     }
 
     this.logger.debug(`All ${createDto.actions.length} actions validated`);
+
+    // Validate Pub/Sub topic and Gmail watch for Gmail triggers before saving to database
+    if (createDto.trigger.type === TriggerType.GOOGLE_MAIL) {
+      await this.validatePubSubTopicForGmailTrigger(userId, createDto.trigger.config);
+      await this.validateGmailWatchForGmailTrigger(userId, createDto.trigger.config);
+    }
 
     // Create workflow with trigger and actions
     this.logger.debug(`Creating workflow in database with ${createDto.actions.length} actions`);
@@ -239,8 +252,165 @@ export class WorkflowService {
       this.logger.debug(`Workflow ${workflow.id} is disabled, skipping trigger registration`);
     }
 
+    // Create Pub/Sub subscription for Gmail triggers after saving workflow
+    if (createDto.trigger.type === TriggerType.GOOGLE_MAIL && this.pubSubService.isAvailable()) {
+      try {
+        this.logger.log(`[WorkflowService] Creating Pub/Sub subscription for user ${userId}`);
+        const topicPath = this.pubSubService.getTopicPath(userId);
+        const subscriptionPath = await this.pubSubService.createSubscription(userId, topicPath);
+        this.logger.log(`[WorkflowService] ✅ Pub/Sub subscription created successfully: ${subscriptionPath}`);
+      } catch (error: any) {
+        // Log error but don't fail workflow creation - subscription can be created later
+        this.logger.error(`[WorkflowService] Failed to create Pub/Sub subscription for user ${userId}: ${error.message}`);
+        this.logger.warn(`[WorkflowService] Workflow saved but subscription creation failed. Subscription may need to be created manually.`);
+      }
+    }
+
     this.logger.log(`Workflow "${createDto.name}" created successfully with ID ${workflowWithRelations.id}`);
     return workflowWithRelations;
+  }
+
+  /**
+   * Validate Pub/Sub topic creation for Gmail triggers
+   * Ensures topic can be created before saving workflow to database
+   */
+  private async validatePubSubTopicForGmailTrigger(userId: number, config: any): Promise<void> {
+    if (!this.pubSubService.isAvailable()) {
+      throw new BadRequestException(
+        'Pub/Sub service is not available. Please set GOOGLE_PROJECT_NAME (or GCP_PROJECT_ID) and GOOGLE_APPLICATION_CREDENTIALS environment variables.'
+      );
+    }
+
+    try {
+      this.logger.log(`[WorkflowService] Validating Pub/Sub topic creation for user ${userId}`);
+      
+      // Attempt to create or verify topic exists
+      const topicPath = await this.pubSubService.createTopic(userId);
+      
+      this.logger.log(`[WorkflowService] ✅ Pub/Sub topic validated successfully: ${topicPath}`);
+    } catch (error: any) {
+      this.logger.error(`[WorkflowService] Failed to validate Pub/Sub topic for user ${userId}: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to validate Pub/Sub topic: ${error.message}. Please ensure Google Cloud Pub/Sub is properly configured.`
+      );
+    }
+  }
+
+  /**
+   * Validate Gmail watch creation for Gmail triggers
+   * Ensures OAuth tokens are valid and Gmail API is accessible before saving workflow to database
+   */
+  private async validateGmailWatchForGmailTrigger(userId: number, config: any): Promise<void> {
+    try {
+      this.logger.log(`[WorkflowService] Validating Gmail watch creation for user ${userId}`);
+      
+      // Check if OAuth account exists
+      const oauthAccount = await this.prisma.oAuthAccount.findFirst({
+        where: {
+          userId,
+          provider: 'google',
+        },
+      });
+
+      if (!oauthAccount || !oauthAccount.accessToken) {
+        throw new BadRequestException(
+          'Google OAuth account not found. Please connect your Google account before creating a Gmail trigger workflow.'
+        );
+      }
+
+      if (!oauthAccount.refreshToken) {
+        throw new BadRequestException(
+          'Google refresh token not found. Please re-authenticate with Google to get a refresh token.'
+        );
+      }
+
+      // Validate and refresh access token if needed
+      let accessToken = oauthAccount.accessToken;
+      const now = new Date();
+      const expiresAt = oauthAccount.expiresAt;
+      
+      // Check if token is expired or expires within the next 5 minutes
+      const needsRefresh = !expiresAt || expiresAt <= new Date(now.getTime() + 5 * 60 * 1000);
+      
+      if (needsRefresh) {
+        this.logger.log(`[WorkflowService] Access token expired or expiring soon, refreshing...`);
+        
+        try {
+          const refreshedTokens = await this.googleOAuthService.refreshAccessToken(oauthAccount.refreshToken);
+          accessToken = refreshedTokens.access_token;
+          
+          // Update OAuth account with new token
+          const newExpiresAt = refreshedTokens.expires_in 
+            ? new Date(Date.now() + refreshedTokens.expires_in * 1000)
+            : expiresAt;
+          
+          await this.prisma.oAuthAccount.update({
+            where: { id: oauthAccount.id },
+            data: {
+              accessToken: refreshedTokens.access_token,
+              expiresAt: newExpiresAt,
+              refreshToken: refreshedTokens.refresh_token || oauthAccount.refreshToken,
+            },
+          });
+          
+          this.logger.log(`[WorkflowService] ✅ Access token refreshed successfully`);
+        } catch (refreshError: any) {
+          this.logger.error(`[WorkflowService] Failed to refresh access token: ${refreshError.message}`);
+          throw new BadRequestException(
+            `Failed to refresh access token: ${refreshError.message}. Please re-authenticate with Google.`
+          );
+        }
+      }
+
+      // Validate that Pub/Sub topic exists (required for watch)
+      if (!this.pubSubService.isAvailable()) {
+        throw new BadRequestException(
+          'Pub/Sub service is not available. Gmail watch requires Pub/Sub topic to be configured.'
+        );
+      }
+
+      const topicPath = this.pubSubService.getTopicPath(userId);
+      this.logger.log(`[WorkflowService] Using Pub/Sub topic: ${topicPath}`);
+
+      // Test Gmail API access with a simple profile call
+      // This validates that the token has the necessary Gmail scopes
+      try {
+        const response = await axios.get('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        
+        this.logger.log(`[WorkflowService] ✅ Gmail API access validated successfully (email: ${response.data.emailAddress})`);
+      } catch (apiError: any) {
+        const errorMessage = apiError.response?.data?.error?.message || apiError.message;
+        this.logger.error(`[WorkflowService] Failed to validate Gmail API access: ${errorMessage}`);
+        
+        if (apiError.response?.status === 401) {
+          throw new BadRequestException(
+            'Invalid Gmail access token. Please re-authenticate with Google and ensure Gmail API scopes are granted.'
+          );
+        } else if (apiError.response?.status === 403) {
+          throw new BadRequestException(
+            'Gmail API access denied. Please ensure Gmail API is enabled and the necessary scopes are granted.'
+          );
+        } else {
+          throw new BadRequestException(
+            `Failed to validate Gmail API access: ${errorMessage}. Please ensure Gmail API is properly configured.`
+          );
+        }
+      }
+
+      this.logger.log(`[WorkflowService] ✅ Gmail watch validation completed successfully`);
+    } catch (error: any) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(`[WorkflowService] Failed to validate Gmail watch for user ${userId}: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to validate Gmail watch: ${error.message}. Please ensure Google OAuth and Gmail API are properly configured.`
+      );
+    }
   }
 
   async findById(id: number, userId: number) {
@@ -277,6 +447,13 @@ export class WorkflowService {
     // Update trigger if provided
     if (data.trigger) {
       this.logger.log(`Updating trigger for workflow ${id}`);
+      
+      // Validate Pub/Sub topic and Gmail watch for Gmail triggers before updating database
+      if (data.trigger.type === TriggerType.GOOGLE_MAIL) {
+        await this.validatePubSubTopicForGmailTrigger(userId, data.trigger.config);
+        await this.validateGmailWatchForGmailTrigger(userId, data.trigger.config);
+      }
+      
       await this.prisma.trigger.update({
         where: { workflowId: id },
         data: {
@@ -516,6 +693,20 @@ export class WorkflowService {
       await this.triggerRegistry.unregister(updated.id);
       await this.triggerRegistry.register(updated.id, data.trigger.type, data.trigger.config);
       this.logger.debug(`Trigger re-registered for workflow ${id}`);
+
+      // Create Pub/Sub subscription for Gmail triggers after updating trigger
+      if (data.trigger.type === TriggerType.GOOGLE_MAIL && this.pubSubService.isAvailable()) {
+        try {
+          this.logger.log(`[WorkflowService] Creating Pub/Sub subscription for user ${userId}`);
+          const topicPath = this.pubSubService.getTopicPath(userId);
+          const subscriptionPath = await this.pubSubService.createSubscription(userId, topicPath);
+          this.logger.log(`[WorkflowService] ✅ Pub/Sub subscription created successfully: ${subscriptionPath}`);
+        } catch (error: any) {
+          // Log error but don't fail workflow update - subscription can be created later
+          this.logger.error(`[WorkflowService] Failed to create Pub/Sub subscription for user ${userId}: ${error.message}`);
+          this.logger.warn(`[WorkflowService] Workflow updated but subscription creation failed. Subscription may need to be created manually.`);
+        }
+      }
     }
 
     this.logger.log(`Workflow ${id} updated successfully`);

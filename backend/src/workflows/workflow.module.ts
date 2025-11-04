@@ -1,5 +1,6 @@
 import { Module, Inject } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowService } from './workflow.service';
 import { ExecutionService } from './execution.service';
@@ -11,12 +12,18 @@ import { ActionRegistry } from './actions/action.registry';
 import { ActionFactory } from './actions/action.factory';
 import { DatabaseModule } from '../database/database.module';
 import { AuthModule } from '../auth/auth.module';
+import { OAuthModule } from '../oauth/oauth.module';
 import { Queue } from 'bullmq';
 import { getRedisConnectionObject } from '../queues/queue.config';
 
 // Services
 import { WorkflowEventService } from './services/workflow-event.service';
 import { GmailService } from './services/gmail.service';
+import { PubSubService } from './services/pubsub.service';
+import { OAuthService } from '../oauth/oauth.service';
+import { GoogleOAuthService } from '../auth/services/google-oauth.service';
+import { PrismaService } from '../database/prisma.service';
+import { ConfigService } from '@nestjs/config';
 
 // Trigger handlers
 import { ManualTriggerHandler } from './triggers/manual.trigger';
@@ -26,9 +33,12 @@ import { ScheduleTriggerHandler } from './triggers/schedule.trigger';
 
 // Controllers
 import { TriggerController } from './controllers/trigger.controller';
+import { GmailTriggerController } from './controllers/gmail-trigger.controller';
 
 // Listeners
 import { WorkflowTriggerListener } from './listeners/workflow-trigger.listener';
+import { GmailAutoRegisterListener } from './listeners/gmail-auto-register.listener';
+import { TriggerAutoStartListener } from './listeners/trigger-auto-start.listener';
 
 // Action handlers
 import { ExampleActionHandler } from './actions/example.action';
@@ -43,9 +53,11 @@ import { ParallelActionHandler } from './actions/parallel.action';
   imports: [
     DatabaseModule,
     AuthModule,
+    OAuthModule,
     EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
   ],
-  controllers: [WorkflowController, TriggerController],
+  controllers: [WorkflowController, TriggerController, GmailTriggerController],
   providers: [
     WorkflowService,
     ExecutionService,
@@ -58,13 +70,46 @@ import { ParallelActionHandler } from './actions/parallel.action';
     // Services
     WorkflowEventService,
     GmailService,
+    PubSubService,
     // Trigger handlers
     ManualTriggerHandler,
     WebhookTriggerHandler,
-    GoogleMailTriggerHandler,
+    {
+      provide: GoogleMailTriggerHandler,
+      useFactory: (
+        prisma: PrismaService,
+        configService: ConfigService,
+        workflowEventService: WorkflowEventService,
+        gmailService: GmailService,
+        pubSubService: PubSubService,
+        oauthService: OAuthService,
+        googleOAuthService: GoogleOAuthService,
+      ) => {
+        return new GoogleMailTriggerHandler(
+          prisma,
+          configService,
+          workflowEventService,
+          gmailService,
+          pubSubService,
+          oauthService,
+          googleOAuthService,
+        );
+      },
+      inject: [
+        PrismaService,
+        ConfigService,
+        WorkflowEventService,
+        GmailService,
+        PubSubService,
+        OAuthService,
+        GoogleOAuthService,
+      ],
+    },
     ScheduleTriggerHandler,
     // Listeners
     WorkflowTriggerListener,
+    GmailAutoRegisterListener,
+    TriggerAutoStartListener,
     // Schedule queue (optional, for distributed scheduling)
     {
       provide: 'WORKFLOW_SCHEDULE_QUEUE',
@@ -134,6 +179,7 @@ import { ParallelActionHandler } from './actions/parallel.action';
         GoogleMailTriggerHandler,
         ScheduleTriggerHandler,
       ],
+      // Note: GoogleMailTriggerHandler is injected via useFactory above
     },
     // Register action handlers
     {
@@ -169,7 +215,7 @@ import { ParallelActionHandler } from './actions/parallel.action';
       ],
     },
   ],
-  exports: [WorkflowService, ExecutionService, ActionRegistry, TriggerRegistry],
+  exports: [WorkflowService, ExecutionService, ActionRegistry, TriggerRegistry, GoogleMailTriggerHandler],
 })
 export class WorkflowModule {
   constructor(

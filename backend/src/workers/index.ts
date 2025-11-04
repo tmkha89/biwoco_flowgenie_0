@@ -36,6 +36,7 @@ try {
 // Import workers
 import { exampleWorker } from './example.worker';
 import { workflowWorker } from './workflow.worker';
+import { gmailEventWorker } from './gmail-event.worker';
 
 /**
  * Log prefix for worker messages
@@ -45,7 +46,7 @@ const LOG_PREFIX = '[Worker]';
 /**
  * Array to store all active workers for graceful shutdown
  */
-const workers = [exampleWorker, workflowWorker];
+const workers = [exampleWorker, workflowWorker, gmailEventWorker];
 
 /**
  * Graceful shutdown handler
@@ -99,12 +100,37 @@ async function start() {
   const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
   console.log(`${LOG_PREFIX} Connecting to Redis at: ${redisUrl}`);
 
-  // Log all active workers
+  // Initialize and log all active workers
   console.log(`${LOG_PREFIX} Active workers:`);
-  workers.forEach((worker) => {
-    const name = worker.name || 'unknown';
-    console.log(`${LOG_PREFIX}   - ${name}`);
-  });
+  for (const worker of workers) {
+    try {
+      const name = worker.name || 'unknown';
+      console.log(`${LOG_PREFIX}   - ${name}`);
+      
+      // Verify worker is properly initialized
+      if (worker && typeof worker === 'object' && 'worker' in worker) {
+        const innerWorker = (worker as any).worker;
+        if (innerWorker && typeof innerWorker.isRunning === 'function') {
+          const isRunning = innerWorker.isRunning();
+          console.log(`${LOG_PREFIX}     Status: ${isRunning ? 'running' : 'not running'}`);
+        }
+      }
+    } catch (error) {
+      console.error(`${LOG_PREFIX} Error initializing worker:`, error);
+    }
+  }
+
+  // Verify Gmail event worker specifically
+  try {
+    const gmailWorker = workers.find((w) => w.name === 'gmail-event-worker');
+    if (gmailWorker) {
+      console.log(`${LOG_PREFIX} ✅ Gmail event worker initialized`);
+    } else {
+      console.warn(`${LOG_PREFIX} ⚠️ Gmail event worker not found in workers array`);
+    }
+  } catch (error) {
+    console.error(`${LOG_PREFIX} Error verifying Gmail event worker:`, error);
+  }
 
   console.log(`${LOG_PREFIX} ✅ Worker service started successfully`);
   console.log(`${LOG_PREFIX} Waiting for jobs...\n`);
