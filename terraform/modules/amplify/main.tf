@@ -28,11 +28,11 @@ resource "aws_amplify_app" "main" {
   EOT
 
   # Environment variables
-  dynamic "environment_variables" {
+  dynamic "environment_variable" {
     for_each = var.environment_variables
     content {
-      name  = environment_variables.key
-      value = environment_variables.value
+      name  = environment_variable.key
+      value = environment_variable.value
     }
   }
 
@@ -92,11 +92,11 @@ resource "aws_amplify_branch" "main" {
   enable_auto_build = true
 
   # Environment variables for the branch
-  dynamic "environment_variables" {
+  dynamic "environment_variable" {
     for_each = var.environment_variables
     content {
-      name  = environment_variables.key
-      value = environment_variables.value
+      name  = environment_variable.key
+      value = environment_variable.value
     }
   }
 
