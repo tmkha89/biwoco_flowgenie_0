@@ -137,13 +137,42 @@ jobs:
           STAGE="${{ env.STAGE }}"
           
           # Get the correct password based on stage
+          echo "Retrieving database password for stage: $STAGE"
           if [ "$STAGE" == "prod" ]; then
             DB_PASSWORD="$DB_PASSWORD_PROD"
+            SECRET_NAME="DB_PASSWORD_PROD"
           elif [ "$STAGE" == "staging" ]; then
             DB_PASSWORD="$DB_PASSWORD_STAGING"
+            SECRET_NAME="DB_PASSWORD_STAGING"
           else
             DB_PASSWORD="$DB_PASSWORD_DEV"
+            SECRET_NAME="DB_PASSWORD_DEV"
           fi
+          
+          # Verify password was retrieved successfully
+          if [ -z "$DB_PASSWORD" ]; then
+            echo "❌ ERROR: Database password is empty!"
+            echo "GitHub secret '$SECRET_NAME' is not set or is empty"
+            echo "Please ensure the secret is configured in:"
+            echo "  Repository Settings → Secrets and variables → Actions → Secrets"
+            exit 1
+          fi
+          
+          # Verify password is not just whitespace
+          if [ -z "${DB_PASSWORD// }" ]; then
+            echo "❌ ERROR: Database password contains only whitespace!"
+            echo "GitHub secret '$SECRET_NAME' appears to be invalid"
+            exit 1
+          fi
+          
+          # Show password status (without revealing the actual password)
+          PASSWORD_LENGTH=${#DB_PASSWORD}
+          echo "✅ Database password retrieved successfully"
+          echo "  Secret name: $SECRET_NAME"
+          echo "  Password length: $PASSWORD_LENGTH characters"
+          echo "  First character: ${DB_PASSWORD:0:1}***"
+          echo "  Last character: ***${DB_PASSWORD: -1}"
+          echo ""
           
           # Get ECS cluster and task definition details
           CLUSTER_NAME="${STAGE}-flowgenie-worker"
@@ -228,6 +257,55 @@ jobs:
           # Construct DATABASE_URL
           DATABASE_URL="postgresql://${{ steps.get-db.outputs.db_username }}:${DB_PASSWORD}@${{ steps.get-db.outputs.rds_endpoint }}:5432/${{ steps.get-db.outputs.db_name }}"
           
+          # Verify DATABASE_URL construction
+          echo "Verifying DATABASE_URL construction..."
+          if [ -z "$DATABASE_URL" ]; then
+            echo "❌ ERROR: DATABASE_URL is empty!"
+            exit 1
+          fi
+          
+          # Extract components from DATABASE_URL for verification (without password)
+          DB_URL_WITHOUT_PASSWORD=$(echo "$DATABASE_URL" | sed 's/:[^:@]*@/:***@/')
+          echo "✅ DATABASE_URL constructed successfully"
+          echo "  Format: $DB_URL_WITHOUT_PASSWORD"
+          
+          # Verify all components are present
+          if [[ "$DATABASE_URL" != *"${{ steps.get-db.outputs.db_username }}"* ]]; then
+            echo "❌ ERROR: Username not found in DATABASE_URL"
+            exit 1
+          fi
+          
+          if [[ "$DATABASE_URL" != *"${{ steps.get-db.outputs.rds_endpoint }}"* ]]; then
+            echo "❌ ERROR: Endpoint not found in DATABASE_URL"
+            exit 1
+          fi
+          
+          if [[ "$DATABASE_URL" != *"${{ steps.get-db.outputs.db_name }}"* ]]; then
+            echo "❌ ERROR: Database name not found in DATABASE_URL"
+            exit 1
+          fi
+          
+          if [[ "$DATABASE_URL" != *"${DB_PASSWORD}"* ]]; then
+            echo "❌ ERROR: Password not found in DATABASE_URL"
+            exit 1
+          fi
+          
+          # Debug: Show connection details (mask password)
+          echo ""
+          echo "Database connection details:"
+          echo "  Username: ${{ steps.get-db.outputs.db_username }}"
+          echo "  Database: ${{ steps.get-db.outputs.db_name }}"
+          echo "  Endpoint: ${{ steps.get-db.outputs.rds_endpoint }}"
+          echo "  Password length: ${#DB_PASSWORD} characters"
+          echo "  Password in URL: ${DB_PASSWORD:0:1}***${DB_PASSWORD: -1} (masked)"
+          echo ""
+          echo "⚠️  If authentication fails, verify:"
+          echo "  1. GitHub secret 'DB_PASSWORD_${STAGE^^}' matches the RDS master password"
+          echo "  2. The RDS master username matches: ${{ steps.get-db.outputs.db_username }}"
+          echo "  3. The password hasn't been changed in RDS after deployment"
+          echo "  4. Special characters in password are properly escaped in the DATABASE_URL"
+          echo ""
+          
           # Get ECR repository URI for the image
           ECR_REPO="${STAGE}-flowgenie-worker"
           ECR_URI=$(aws ecr describe-repositories \
@@ -297,6 +375,23 @@ jobs:
           # Create connection test command using jq
           # Test connection using prisma migrate status (read-only, uses Prisma CLI)
           # This works because Prisma CLI is available via npx and doesn't require @prisma/client
+          # Note: Mask password in DATABASE_URL for logging (but keep it in the actual env var)
+          DB_URL_FOR_LOG=$(echo "$DATABASE_URL" | sed 's/:[^:@]*@/:***@/')
+          echo "Testing connection with DATABASE_URL: $DB_URL_FOR_LOG"
+          
+          # Verify DATABASE_URL is not empty before passing to ECS task
+          if [ -z "$DATABASE_URL" ]; then
+            echo "❌ ERROR: DATABASE_URL is empty, cannot proceed with connection test"
+            exit 1
+          fi
+          
+          # Verify DATABASE_URL contains password (should be longer than just username@host)
+          MIN_EXPECTED_LENGTH=$((${#DB_PASSWORD} + 50))  # Rough estimate: password + other components
+          if [ ${#DATABASE_URL} -lt $MIN_EXPECTED_LENGTH ]; then
+            echo "⚠️  WARNING: DATABASE_URL seems shorter than expected (${#DATABASE_URL} chars)"
+            echo "   This might indicate the password wasn't properly included"
+          fi
+          
           OVERRIDES_JSON=$(jq -n \
             --arg container_name "worker" \
             --arg db_url "$DATABASE_URL" \
@@ -304,7 +399,7 @@ jobs:
             '{
               containerOverrides: [{
                 name: $container_name,
-                command: ["sh", "-c", "cd /app && npx prisma migrate status 2>&1 | head -5 && echo \"✅ Database connection successful\" || (echo \"❌ Database connection failed\" && exit 1)"],
+                command: ["sh", "-c", "cd /app && echo \"Verifying DATABASE_URL is set...\" && if [ -z \"$DATABASE_URL\" ]; then echo \"❌ ERROR: DATABASE_URL is empty in container\"; exit 1; fi && echo \"DATABASE_URL length: ${#DATABASE_URL}\" && OUTPUT=$(npx prisma migrate status 2>&1); EXIT_CODE=$?; echo \"$OUTPUT\"; if [ $EXIT_CODE -eq 0 ] && ! echo \"$OUTPUT\" | grep -q 'P1000\|Authentication failed\|not valid'; then echo \"✅ Database connection successful\"; exit 0; else echo \"❌ Database connection failed\"; exit 1; fi"],
                 environment: [
                   {name: "DATABASE_URL", value: $db_url},
                   {name: "STAGE", value: $stage},
@@ -312,6 +407,23 @@ jobs:
                 ]
               }]
             }')
+          
+          # Verify the JSON was created successfully
+          if [ -z "$OVERRIDES_JSON" ] || [ "$OVERRIDES_JSON" == "null" ]; then
+            echo "❌ ERROR: Failed to create task overrides JSON"
+            exit 1
+          fi
+          
+          # Verify DATABASE_URL is in the JSON (masked for security)
+          if echo "$OVERRIDES_JSON" | jq -e '.containerOverrides[0].environment[] | select(.name == "DATABASE_URL") | .value' > /dev/null 2>&1; then
+            ENV_DB_URL=$(echo "$OVERRIDES_JSON" | jq -r '.containerOverrides[0].environment[] | select(.name == "DATABASE_URL") | .value')
+            ENV_DB_URL_MASKED=$(echo "$ENV_DB_URL" | sed 's/:[^:@]*@/:***@/')
+            echo "✅ DATABASE_URL verified in task overrides: $ENV_DB_URL_MASKED"
+          else
+            echo "❌ ERROR: DATABASE_URL not found in task overrides JSON"
+            exit 1
+          fi
+          echo ""
           
           CONNECTION_TEST_TASK_ARN=$(aws ecs run-task \
             --cluster "$CLUSTER_NAME" \
@@ -422,6 +534,12 @@ jobs:
           # Run ECS task with override command to run migrations
           echo "Starting migration task..."
           
+          # Verify DATABASE_URL is still available (should be, but double-check)
+          if [ -z "$DATABASE_URL" ]; then
+            echo "❌ ERROR: DATABASE_URL is empty, cannot proceed with migrations"
+            exit 1
+          fi
+          
           # Create migration overrides JSON using jq
           MIGRATION_OVERRIDES_JSON=$(jq -n \
             --arg container_name "worker" \
@@ -430,7 +548,7 @@ jobs:
             '{
               containerOverrides: [{
                 name: $container_name,
-                command: ["sh", "-c", "npx prisma migrate deploy"],
+                command: ["sh", "-c", "cd /app && echo \"Verifying DATABASE_URL for migrations...\" && if [ -z \"$DATABASE_URL\" ]; then echo \"❌ ERROR: DATABASE_URL is empty in container\"; exit 1; fi && echo \"DATABASE_URL length: ${#DATABASE_URL}\" && npx prisma migrate deploy"],
                 environment: [
                   {name: "DATABASE_URL", value: $db_url},
                   {name: "STAGE", value: $stage},
@@ -438,6 +556,23 @@ jobs:
                 ]
               }]
             }')
+          
+          # Verify the JSON was created successfully
+          if [ -z "$MIGRATION_OVERRIDES_JSON" ] || [ "$MIGRATION_OVERRIDES_JSON" == "null" ]; then
+            echo "❌ ERROR: Failed to create migration task overrides JSON"
+            exit 1
+          fi
+          
+          # Verify DATABASE_URL is in the JSON (masked for security)
+          if echo "$MIGRATION_OVERRIDES_JSON" | jq -e '.containerOverrides[0].environment[] | select(.name == "DATABASE_URL") | .value' > /dev/null 2>&1; then
+            MIGRATION_DB_URL=$(echo "$MIGRATION_OVERRIDES_JSON" | jq -r '.containerOverrides[0].environment[] | select(.name == "DATABASE_URL") | .value')
+            MIGRATION_DB_URL_MASKED=$(echo "$MIGRATION_DB_URL" | sed 's/:[^:@]*@/:***@/')
+            echo "✅ DATABASE_URL verified in migration task overrides: $MIGRATION_DB_URL_MASKED"
+          else
+            echo "❌ ERROR: DATABASE_URL not found in migration task overrides JSON"
+            exit 1
+          fi
+          echo ""
           
           TASK_ARN=$(aws ecs run-task \
             --cluster "$CLUSTER_NAME" \
