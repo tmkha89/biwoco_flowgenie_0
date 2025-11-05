@@ -112,11 +112,37 @@ export class AllExceptionsFilter implements ExceptionFilter {
       ...(details && { details }),
     };
 
-    // Log the error
-    this.logger.error(
-      `${request.method} ${request.url} - ${status} - ${message}`,
-      exception instanceof Error ? exception.stack : undefined,
-    );
+    // Log the error with detailed information
+    this.logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    this.logger.error(`❌ Exception occurred: ${request.method} ${request.url}`);
+    this.logger.error(`Status Code: ${status}`);
+    this.logger.error(`Error Message: ${message}`);
+    this.logger.error(`Error Type: ${error || exception?.constructor?.name || 'Unknown'}`);
+    
+    if (exception instanceof Error) {
+      this.logger.error(`Error Name: ${exception.name}`);
+      this.logger.error(`Error Message: ${exception.message}`);
+      if (exception.stack) {
+        this.logger.error('Error Stack:');
+        this.logger.error(exception.stack);
+      }
+    }
+    
+    if (details) {
+      this.logger.error(`Error Details: ${JSON.stringify(details, null, 2)}`);
+    }
+    
+    // Log request details for debugging
+    this.logger.error('Request Details:');
+    this.logger.error(`  Method: ${request.method}`);
+    this.logger.error(`  URL: ${request.url}`);
+    this.logger.error(`  Path: ${request.path}`);
+    this.logger.error(`  Query: ${JSON.stringify(request.query)}`);
+    this.logger.error(`  Body: ${JSON.stringify(request.body || {})}`);
+    this.logger.error(`  Headers: ${JSON.stringify(request.headers)}`);
+    this.logger.error(`  IP: ${request.ip}`);
+    this.logger.error(`  User Agent: ${request.get('User-Agent') || 'unknown'}`);
+    this.logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     response.status(status).json(errorResponse);
   }
