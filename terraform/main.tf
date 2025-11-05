@@ -160,16 +160,16 @@ module "app_runner" {
   }
 }
 
-# App Runner Module for Backend (using existing ECR repository dev-flowgenie-apprunner-func)
+# App Runner Module for Backend (using existing ECR repository dev-flowgenie-func)
 module "app_runner_lambda_image" {
   source = "./modules/app-runner"
 
   stage      = var.stage
   aws_region = var.aws_region
 
-  # Use existing ECR repository: dev-flowgenie-apprunner-func
+  # Use existing ECR repository: dev-flowgenie-func
   use_existing_ecr            = true
-  existing_ecr_repository_name = "${var.stage}-flowgenie-apprunner-func"
+  existing_ecr_repository_name = "${var.stage}-flowgenie-func"
   service_name                = "${var.stage}-flowgenie-apprunner-func"
 
   vpc_id             = module.vpc.vpc_id
