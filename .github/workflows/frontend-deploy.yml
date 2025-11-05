@@ -342,8 +342,8 @@ jobs:
                 exit 1
               fi
               
-              DEPLOYMENT_ID=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.jobSummary.jobId' 2>/dev/null)
-              ZIP_UPLOAD_URL=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.zipUploadUrl' 2>/dev/null)
+              DEPLOYMENT_ID=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.jobId // .jobSummary.jobId' 2>/dev/null)
+              ZIP_UPLOAD_URL=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.zipUploadUrl // .jobSummary.zipUploadUrl' 2>/dev/null)
               
               if [ $? -ne 0 ] || [ -z "$DEPLOYMENT_ID" ] || [ "$DEPLOYMENT_ID" == "null" ]; then
                 echo ""
