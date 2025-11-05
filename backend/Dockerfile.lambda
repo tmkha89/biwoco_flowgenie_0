@@ -1,0 +1,18 @@
+FROM public.ecr.aws/lambda/nodejs:20
+
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Copy package files
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Install dependencies
+RUN npm ci --production && \
+    npx prisma generate
+
+# Copy built application
+COPY dist/ ./
+
+# Set the CMD to your handler (Lambda runtime expects the handler path relative to LAMBDA_TASK_ROOT)
+CMD [ "lambda.handler" ]
+

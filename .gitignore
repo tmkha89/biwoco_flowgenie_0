@@ -48,6 +48,7 @@ sonarqube
 
 # documentation
 *.md
+!**/Dockerfile*
 
 # static files
 *.7z

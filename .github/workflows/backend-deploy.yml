@@ -261,93 +261,73 @@ jobs:
           
           echo "✅ Database migrations completed successfully"
 
-      - name: Create Lambda Layer (dependencies)
+      - name: Build backend application
         working-directory: ./backend
         run: |
-          echo "Creating Lambda Layer with dependencies..."
-          
-          # Create layer directory structure (Lambda layers require nodejs/node_modules/)
-          mkdir -p lambda-layer/nodejs
-          
-          # Copy package.json and install production dependencies
-          cp package.json package-lock.json lambda-layer/nodejs/
-          cd lambda-layer/nodejs
-          npm ci --omit=dev --production --no-audit --no-fund
-          
-          # Generate Prisma client in the layer
-          if [ -f "../../prisma/schema.prisma" ]; then
-            echo "Generating Prisma client in layer..."
-            cp -r ../../prisma ./
-            npx prisma generate --schema=./prisma/schema.prisma
-            rm -rf prisma
-          fi
-          
-          # Remove unnecessary files to reduce layer size
-          echo "Optimizing layer dependencies..."
-          find node_modules -type d -name "__tests__" -exec rm -rf {} + 2>/dev/null || true
-          find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
-          find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
-          find node_modules -type f -name "*.test.js" -delete 2>/dev/null || true
-          find node_modules -type f -name "*.spec.js" -delete 2>/dev/null || true
-          find node_modules -type f -name "*.map" -delete 2>/dev/null || true
-          find node_modules -type f -name "*.md" -delete 2>/dev/null || true
-          find node_modules -type f -name "LICENSE" -delete 2>/dev/null || true
-          find node_modules -type f -name "CHANGELOG*" -delete 2>/dev/null || true
-          find node_modules -type f -name "README*" -delete 2>/dev/null || true
-          
-          # Keep only the Linux query engine for Prisma (Lambda runs on Linux)
-          if [ -d "node_modules/.prisma/client" ]; then
-            echo "Optimizing Prisma query engines..."
-            find node_modules/.prisma/client -name "query_engine-*" ! -name "query_engine-linux*" -delete 2>/dev/null || true
-            find node_modules/.prisma/client -name "libquery_engine-*" ! -name "libquery_engine-linux*" -delete 2>/dev/null || true
-            find node_modules/.prisma/client -name "schema-engine-*" ! -name "schema-engine-linux*" -delete 2>/dev/null || true
-          fi
-          
-          # Remove Prisma CLI (not needed in Lambda)
-          rm -rf node_modules/prisma 2>/dev/null || true
-          rm -f package.json package-lock.json
-          
-          cd ../..
-          
-          # Create layer zip file
-          echo "Creating layer zip file..."
-          cd lambda-layer
-          zip -r -9 ../lambda-layer.zip . -x "*.git*" "*/.git/*"
-          cd ..
-          
-          LAYER_SIZE=$(du -h lambda-layer.zip | cut -f1)
-          LAYER_SIZE_BYTES=$(wc -c < lambda-layer.zip)
-          LAYER_SIZE_MB=$((LAYER_SIZE_BYTES / 1024 / 1024))
-          
-          echo "✅ Lambda Layer created successfully"
-          echo "  Size: $LAYER_SIZE (${LAYER_SIZE_MB} MB / ${LAYER_SIZE_BYTES} bytes)"
+          echo "Building backend application..."
+          npm ci
+          npm run build
+          echo "✅ Backend application built successfully"
 
-      - name: Create Lambda deployment package (code only)
-        working-directory: ./backend
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials for ECR
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get ECR repository URI
+        id: ecr-repo
         run: |
-          echo "Creating Lambda code package (without dependencies)..."
+          STAGE="${{ env.STAGE }}"
+          REPO_NAME="${STAGE}-flowgenie-api"
           
-          # Create package directory (code only, no node_modules)
-          mkdir -p lambda-package
+          # Create ECR repository if it doesn't exist
+          if ! aws ecr describe-repositories --repository-names "$REPO_NAME" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "Creating ECR repository: $REPO_NAME"
+            aws ecr create-repository \
+              --repository-name "$REPO_NAME" \
+              --region ${{ env.AWS_REGION }} \
+              --image-scanning-configuration scanOnPush=true \
+              --encryption-configuration encryptionType=AES256
+          fi
           
-          # Copy built files only
-          cp -r dist/* lambda-package/
+          # Get repository URI
+          REPO_URI=$(aws ecr describe-repositories \
+            --repository-names "$REPO_NAME" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'repositories[0].repositoryUri' \
+            --output text)
           
-          # Create zip file (code only - much smaller)
-          echo "Creating code-only zip file..."
-          zip -r -9 lambda-api.zip lambda-package/ \
-            -x "*.git*" \
-            -x "*.md" \
-            -x "*.test.*" \
-            -x "*.spec.*"
+          echo "ECR Repository: $REPO_URI"
+          echo "ecr_repository=$REPO_URI" >> $GITHUB_ENV
+          echo "ecr_repo_name=$REPO_NAME" >> $GITHUB_ENV
+
+      - name: Build, tag, and push Docker image to Amazon ECR
+        working-directory: ./backend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.ecr_repo_name }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Building Docker image..."
+          docker build -f Dockerfile.lambda -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           
-          # Calculate zip size
-          ZIP_SIZE=$(du -h lambda-api.zip | cut -f1)
-          ZIP_SIZE_BYTES=$(wc -c < lambda-api.zip)
-          ZIP_SIZE_MB=$((ZIP_SIZE_BYTES / 1024 / 1024))
+          echo "Pushing Docker image to ECR..."
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           
-          echo "✅ Lambda code package created successfully"
-          echo "  Size: $ZIP_SIZE (${ZIP_SIZE_MB} MB / ${ZIP_SIZE_BYTES} bytes)"
+          echo "✅ Docker image pushed successfully"
+          echo "  Image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "ecr_image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
       - name: Get Lambda function name
         id: get-lambda
@@ -356,75 +336,12 @@ jobs:
           echo "lambda_function_name=$FUNCTION_NAME" >> $GITHUB_OUTPUT
           echo "Target Lambda function: $FUNCTION_NAME"
 
-      - name: Upload Lambda Layer to S3
-        working-directory: ./backend
+      - name: Update Lambda function to use container image
         run: |
-          STAGE="${{ env.STAGE }}"
-          BUCKET_NAME="${STAGE}-flowgenie-lambda-packages"
-          LAYER_S3_KEY="lambda-layer-$(date +%s).zip"
-          
-          # Create S3 bucket if it doesn't exist
-          if ! aws s3 ls "s3://$BUCKET_NAME" 2>/dev/null; then
-            echo "Creating S3 bucket: $BUCKET_NAME"
-            aws s3 mb "s3://$BUCKET_NAME" --region ${{ env.AWS_REGION }}
-          fi
-          
-          # Upload layer to S3
-          echo "Uploading Lambda Layer to S3..."
-          aws s3 cp lambda-layer.zip "s3://$BUCKET_NAME/$LAYER_S3_KEY" --region ${{ env.AWS_REGION }}
-          
-          echo "✅ Layer uploaded to S3"
-          echo "  Bucket: $BUCKET_NAME"
-          echo "  Key: $LAYER_S3_KEY"
-          echo "layer_s3_key=$LAYER_S3_KEY" >> $GITHUB_ENV
-
-      - name: Publish Lambda Layer
-        working-directory: ./backend
-        run: |
-          STAGE="${{ env.STAGE }}"
-          BUCKET_NAME="${STAGE}-flowgenie-lambda-packages"
-          LAYER_NAME="${STAGE}-flowgenie-api-dependencies"
-          
-          echo "Publishing Lambda Layer: $LAYER_NAME"
-          
-          # Publish layer version
-          LAYER_ARN=$(aws lambda publish-layer-version \
-            --layer-name "$LAYER_NAME" \
-            --content S3Bucket="$BUCKET_NAME",S3Key="${{ env.layer_s3_key }}" \
-            --compatible-runtimes nodejs20.x \
-            --region ${{ env.AWS_REGION }} \
-            --query 'LayerVersionArn' \
-            --output text)
-          
-          echo "✅ Layer published successfully"
-          echo "  Layer ARN: $LAYER_ARN"
-          echo "layer_arn=$LAYER_ARN" >> $GITHUB_ENV
-          echo "layer_version=$(echo $LAYER_ARN | awk -F: '{print $NF}')" >> $GITHUB_ENV
-
-      - name: Upload Lambda code package to S3
-        working-directory: ./backend
-        run: |
-          STAGE="${{ env.STAGE }}"
-          BUCKET_NAME="${STAGE}-flowgenie-lambda-packages"
-          CODE_S3_KEY="lambda-api-$(date +%s).zip"
-          
-          # Upload code package to S3
-          echo "Uploading Lambda code package to S3..."
-          aws s3 cp lambda-api.zip "s3://$BUCKET_NAME/$CODE_S3_KEY" --region ${{ env.AWS_REGION }}
-          
-          echo "✅ Code package uploaded to S3"
-          echo "  Bucket: $BUCKET_NAME"
-          echo "  Key: $CODE_S3_KEY"
-          echo "code_s3_key=$CODE_S3_KEY" >> $GITHUB_ENV
-
-      - name: Update Lambda function code and layers
-        working-directory: ./backend
-        run: |
-          STAGE="${{ env.STAGE }}"
           FUNCTION_NAME="${{ steps.get-lambda.outputs.lambda_function_name }}"
-          BUCKET_NAME="${STAGE}-flowgenie-lambda-packages"
+          IMAGE_URI="${{ env.ecr_image_uri }}"
           
-          echo "Updating Lambda function code and layers..."
+          echo "Updating Lambda function to use container image..."
           
           # Check if function exists
           if ! aws lambda get-function --function-name "$FUNCTION_NAME" >/dev/null 2>&1; then
@@ -433,22 +350,13 @@ jobs:
             exit 1
           fi
           
-          # Update function code from S3
-          echo "Updating function code..."
+          # Update function code to use container image
           aws lambda update-function-code \
             --function-name "$FUNCTION_NAME" \
-            --s3-bucket "$BUCKET_NAME" \
-            --s3-key "${{ env.code_s3_key }}" \
-            --region ${{ env.AWS_REGION }} > /dev/null
+            --image-uri "$IMAGE_URI" \
+            --region ${{ env.AWS_REGION }}
           
-          # Update function layers
-          echo "Updating function layers..."
-          aws lambda update-function-configuration \
-            --function-name "$FUNCTION_NAME" \
-            --layers "${{ env.layer_arn }}" \
-            --region ${{ env.AWS_REGION }} > /dev/null
-          
-          echo "✅ Lambda function code and layers updated successfully"
+          echo "✅ Lambda function updated to use container image: $IMAGE_URI"
 
       - name: Wait for Lambda update
         run: |
