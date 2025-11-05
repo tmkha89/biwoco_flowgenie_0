@@ -97,7 +97,7 @@ variable "existing_ecr_repository_name" {
 }
 
 variable "service_name" {
-  description = "App Runner service name (optional, defaults to ${stage}-flowgenie-apprunner-backend)"
+  description = "App Runner service name (optional, defaults to {stage}-flowgenie-apprunner-backend)"
   type        = string
   default     = ""
 }
