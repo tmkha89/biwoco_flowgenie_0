@@ -8,11 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // Root directory of the project (frontend folder)
-  // Use absolute path to ensure correct resolution in CI/CD
-  root: resolve(__dirname),
-  // Base public path when served in production
-  // Use '/' for root deployment, or '/subpath/' for subdirectory deployment
+  root: ".",
   base: '/',
   server: {
     port: 5173
@@ -27,7 +23,7 @@ export default defineConfig({
     emptyOutDir: true,
     // Explicitly set the entry point for CI/CD builds
     rollupOptions: {
-      input: '/frontend/index.html',
+      input: './index.html',
     },
     // Ensure proper module resolution during build
     commonjsOptions: {
