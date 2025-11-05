@@ -1,3 +1,6 @@
+# Data sources
+data "aws_caller_identity" "current" {}
+
 # IAM Role for Lambda
 resource "aws_iam_role" "lambda" {
   name = "${var.stage}-api-lambda-role"
@@ -48,18 +51,17 @@ resource "aws_cloudwatch_log_group" "lambda" {
   )
 }
 
-# Lambda Function
+# Lambda Function (Container Image)
 resource "aws_lambda_function" "api" {
   function_name = "${var.stage}-flowgenie-api"
   role          = aws_iam_role.lambda.arn
-  handler       = var.lambda_handler
-  runtime       = var.lambda_runtime
+  package_type  = "Image"
   timeout       = var.lambda_timeout
   memory_size   = var.lambda_memory_size
 
-  # Empty lambda placeholder
-  s3_bucket = "flowgenie-bucket"
-  s3_key    = "dev/api-lambda/lambda-api.zip"
+  # ECR Image URI (will be updated by CI/CD pipeline)
+  # Use a placeholder image initially, or provide the actual ECR image URI
+  image_uri = var.lambda_image_uri != "" ? var.lambda_image_uri : "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.stage}-flowgenie-api:latest"
 
   vpc_config {
     subnet_ids         = var.subnet_ids
@@ -83,6 +85,11 @@ resource "aws_lambda_function" "api" {
     aws_iam_role_policy_attachment.lambda_vpc,
     aws_cloudwatch_log_group.lambda
   ]
+
+  # Ignore image_uri changes - CI/CD pipeline manages image updates
+  lifecycle {
+    ignore_changes = [image_uri]
+  }
 
   tags = merge(
     var.tags,

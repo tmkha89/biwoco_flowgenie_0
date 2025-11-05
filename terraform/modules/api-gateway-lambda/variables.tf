@@ -59,22 +59,10 @@ variable "db_password" {
   sensitive   = true
 }
 
-variable "lambda_deployment_package" {
-  description = "Path to Lambda deployment package"
+variable "lambda_image_uri" {
+  description = "ECR image URI for Lambda container image. If not provided, will use a placeholder based on stage and region. CI/CD pipeline manages actual image updates."
   type        = string
-  default     = "lambda-api.zip"
-}
-
-variable "lambda_handler" {
-  description = "Lambda handler"
-  type        = string
-  default     = "lambda.handler"
-}
-
-variable "lambda_runtime" {
-  description = "Lambda runtime"
-  type        = string
-  default     = "nodejs20.x"
+  default     = ""
 }
 
 variable "lambda_timeout" {
