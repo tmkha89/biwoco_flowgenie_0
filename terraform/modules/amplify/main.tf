@@ -1,7 +1,8 @@
 # Amplify App
 resource "aws_amplify_app" "main" {
-  name       = "${var.stage}-flowgenie-frontend"
-  repository = var.repository_url
+  name         = "${var.stage}-flowgenie-frontend"
+  repository   = var.repository_url
+  access_token = var.devops_token
 
   build_spec = <<-EOT
     version: 1
@@ -9,17 +10,18 @@ resource "aws_amplify_app" "main" {
       phases:
         preBuild:
           commands:
+            - cd frontend
             - npm ci
         build:
           commands:
             - npm run build
       artifacts:
-        baseDirectory: dist
+        baseDirectory: frontend/dist
         files:
           - '**/*'
       cache:
         paths:
-          - node_modules/**/*
+          - frontend/node_modules/**/*
   EOT
 
   environment_variables = merge(
