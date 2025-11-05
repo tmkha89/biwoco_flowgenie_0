@@ -11,8 +11,8 @@ RUN npm ci --production && \
     npx prisma generate
 
 # Copy built application from dist/ to Lambda task root
-# COPY dist/ ./ copies contents of dist/ to current directory
-# NestJS builds to dist/ with files like dist/lambda.js, dist/app.module.js, etc.
+# NestJS preserves the directory structure, so we need to maintain it
+# COPY dist/ ./ copies contents of dist/ preserving directory structure
 COPY dist/ ./
 
 # Debug: Show what was copied
@@ -23,44 +23,35 @@ RUN echo "=== Contents after copying dist/ ===" && \
     find . -name "lambda.js" -type f 2>/dev/null || echo "lambda.js not found" && \
     echo "" && \
     echo "=== Searching for app.module.js ===" && \
-    find . -name "app.module.js" -type f 2>/dev/null || echo "app.module.js not found"
+    find . -name "app.module.js" -type f 2>/dev/null || echo "app.module.js not found" && \
+    echo "" && \
+    echo "=== Searching for database.module.js ===" && \
+    find . -name "database.module.js" -type f 2>/dev/null || echo "database.module.js not found" && \
+    echo "" && \
+    echo "=== Directory structure (top level) ===" && \
+    find . -maxdepth 2 -type d | head -20
 
-# Ensure lambda.js and app.module.js are in the root for proper module resolution
-# NestJS may preserve src/ structure, so handle both cases
-RUN if [ -f lambda.js ] && [ -f app.module.js ]; then \
-      echo "✅ Both lambda.js and app.module.js found in root - perfect!"; \
-    elif [ -f src/lambda.js ]; then \
-      echo "⚠️  Files found in src/ subdirectory, copying to root..." && \
-      cp -r src/*.js . 2>/dev/null || true && \
-      cp -r src/*.json . 2>/dev/null || true && \
-      echo "✅ Files copied from src/ to root"; \
-    elif [ -d src ] && [ "$(ls -A src/*.js 2>/dev/null)" ]; then \
-      echo "⚠️  Files found in src/ subdirectory, copying all to root..." && \
-      find src -name "*.js" -exec cp {} . \; && \
-      find src -name "*.json" -exec cp {} . \; 2>/dev/null || true && \
-      echo "✅ All files copied from src/ to root"; \
-    else \
-      echo "ERROR: Could not find lambda.js or app.module.js" && \
-      echo "Current directory contents:" && \
-      ls -la . && \
-      echo "" && \
-      echo "Searching for all .js files:" && \
-      find . -name "*.js" -type f | head -30 && \
-      exit 1; \
-    fi
-
-# Verify required files exist
+# Verify required files exist in their expected locations
+# lambda.js should be in root, and all modules should be in their respective directories
 RUN if [ ! -f lambda.js ]; then \
-      echo "ERROR: lambda.js not found in root after setup" && \
+      echo "ERROR: lambda.js not found in root" && \
+      find . -name "lambda.js" -type f && \
       exit 1; \
     fi && \
     if [ ! -f app.module.js ]; then \
-      echo "ERROR: app.module.js not found in root after setup" && \
-      echo "This is required for lambda.js to import './app.module'" && \
+      echo "ERROR: app.module.js not found in root" && \
+      find . -name "app.module.js" -type f && \
       exit 1; \
     fi && \
-    echo "✅ Verification complete: lambda.js and app.module.js are in root" && \
-    ls -lh lambda.js app.module.js
+    if [ ! -f database/database.module.js ]; then \
+      echo "ERROR: database/database.module.js not found (required by app.module.js)" && \
+      find . -name "database.module.js" -type f && \
+      exit 1; \
+    fi && \
+    echo "✅ Verification complete: All required files found in correct locations" && \
+    echo "  - lambda.js: $(ls -lh lambda.js | awk '{print $9, $5}')" && \
+    echo "  - app.module.js: $(ls -lh app.module.js | awk '{print $9, $5}')" && \
+    echo "  - database/database.module.js: $(ls -lh database/database.module.js | awk '{print $9, $5}')"
 
 # Set the CMD to your handler (Lambda runtime expects the handler path relative to LAMBDA_TASK_ROOT)
 CMD [ "lambda.handler" ]
