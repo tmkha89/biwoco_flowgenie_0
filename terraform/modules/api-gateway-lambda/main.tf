@@ -50,7 +50,6 @@ resource "aws_cloudwatch_log_group" "lambda" {
 
 # Lambda Function
 resource "aws_lambda_function" "api" {
-  filename      = var.lambda_deployment_package
   function_name = "${var.stage}-flowgenie-api"
   role          = aws_iam_role.lambda.arn
   handler       = var.lambda_handler
