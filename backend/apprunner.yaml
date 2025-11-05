@@ -4,16 +4,19 @@ build:
   commands:
     build:
       - echo "Building backend application..."
+      - cd backend
       - npm ci
       - npm run build
       - echo "Build completed successfully"
 run:
   runtime-version: 20
-  command: npm run start:prod
+  command: cd backend && npm run start:prod
   network:
     port: 3000
     env: PORT
   env:
     - name: PORT
       value: "3000"
+    - name: NODE_ENV
+      value: "production"
 
