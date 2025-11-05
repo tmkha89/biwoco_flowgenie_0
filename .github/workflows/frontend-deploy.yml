@@ -18,6 +18,18 @@ on:
           - dev
           - staging
           - prod
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - rollback
+      deployment_id:
+        description: 'Deployment ID to rollback to (leave empty to auto-select previous successful deployment)'
+        required: false
+        type: string
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
@@ -25,10 +37,343 @@ env:
   NODE_VERSION: '24'
 
 jobs:
+  # Rollback job - runs when action is 'rollback'
+  rollback:
+    name: Rollback Frontend Deployment
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || vars.STAGE || 'dev' }}
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'rollback'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for commit checkout
+
+      - name: Install jq for JSON parsing
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Amplify App ID
+        id: get-amplify-app
+        run: |
+          echo "Looking for Amplify app: ${STAGE}-flowgenie-frontend"
+          
+          APP_ID=$(aws amplify list-apps \
+            --query "apps[?name=='${STAGE}-flowgenie-frontend'].appId" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$APP_ID" ]; then
+            echo ""
+            echo "ERROR: Amplify app '${STAGE}-flowgenie-frontend' not found"
+            exit 1
+          fi
+          
+          echo "amplify_app_id=$APP_ID" >> $GITHUB_OUTPUT
+          echo "Found Amplify App ID: $APP_ID"
+
+      - name: Get Amplify Branch Name
+        id: get-branch
+        run: |
+          BRANCH_NAME="main"
+          echo "amplify_branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "Rolling back branch: $BRANCH_NAME"
+
+      - name: List Previous Deployments
+        id: list-deployments
+        run: |
+          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
+          BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
+          
+          echo "Listing previous deployments for app: $APP_ID, branch: $BRANCH_NAME"
+          
+          # Get last 20 jobs (deployments)
+          JOBS_JSON=$(aws amplify list-jobs \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --max-results 20 \
+            --output json 2>/dev/null || echo "[]")
+          
+          # Extract successful deployments
+          SUCCESSFUL_JOBS=$(echo "$JOBS_JSON" | jq -r '.jobSummaries[] | select(.status == "SUCCEED") | {jobId: .jobId, commitMessage: .commitMessage, commitId: .commitId, startTime: .startTime, endTime: .endTime} | @json' | jq -s '.')
+          
+          echo "Previous successful deployments:"
+          echo "$SUCCESSFUL_JOBS" | jq -r '.[] | "ID: \(.jobId) | Commit: \(.commitId // "N/A") | Time: \(.startTime)"'
+          
+          # Save to output for next steps
+          echo "deployments_json=$SUCCESSFUL_JOBS" >> $GITHUB_OUTPUT
+          
+          # Count successful deployments
+          DEPLOYMENT_COUNT=$(echo "$SUCCESSFUL_JOBS" | jq 'length')
+          echo "deployment_count=$DEPLOYMENT_COUNT" >> $GITHUB_OUTPUT
+          
+          if [ "$DEPLOYMENT_COUNT" -eq 0 ]; then
+            echo ""
+            echo "ERROR: No previous successful deployments found"
+            echo "Cannot perform rollback - no previous successful deployment to rollback to"
+            exit 1
+          fi
+
+      - name: Select Rollback Deployment
+        id: select-rollback
+        run: |
+          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
+          TARGET_DEPLOYMENT_ID="${{ inputs.deployment_id }}"
+          DEPLOYMENTS_JSON='${{ steps.list-deployments.outputs.deployments_json }}'
+          
+          if [ -n "$TARGET_DEPLOYMENT_ID" ] && [ "$TARGET_DEPLOYMENT_ID" != "" ]; then
+            # User specified a deployment ID
+            echo "User specified deployment ID: $TARGET_DEPLOYMENT_ID"
+            
+            # Verify it exists and was successful
+            DEPLOYMENT_EXISTS=$(echo "$DEPLOYMENTS_JSON" | jq -r ".[] | select(.jobId == \"$TARGET_DEPLOYMENT_ID\") | .jobId")
+            
+            if [ -z "$DEPLOYMENT_EXISTS" ]; then
+              echo ""
+              echo "ERROR: Deployment ID '$TARGET_DEPLOYMENT_ID' not found in successful deployments"
+              echo "Available deployment IDs:"
+              echo "$DEPLOYMENTS_JSON" | jq -r '.[] | "  - \(.jobId) (Commit: \(.commitId // "N/A"))"'
+              exit 1
+            fi
+            
+            ROLLBACK_DEPLOYMENT_ID="$TARGET_DEPLOYMENT_ID"
+          else
+            # Auto-select the second most recent successful deployment (skip the most recent one)
+            echo "Auto-selecting previous successful deployment (skipping most recent)..."
+            ROLLBACK_DEPLOYMENT_ID=$(echo "$DEPLOYMENTS_JSON" | jq -r '.[1].jobId // .[0].jobId')
+            
+            if [ -z "$ROLLBACK_DEPLOYMENT_ID" ] || [ "$ROLLBACK_DEPLOYMENT_ID" == "null" ]; then
+              echo ""
+              echo "ERROR: Could not determine rollback deployment"
+              exit 1
+            fi
+          fi
+          
+          # Get deployment details
+          ROLLBACK_COMMIT=$(echo "$DEPLOYMENTS_JSON" | jq -r ".[] | select(.jobId == \"$ROLLBACK_DEPLOYMENT_ID\") | .commitId // \"\"")
+          ROLLBACK_TIME=$(echo "$DEPLOYMENTS_JSON" | jq -r ".[] | select(.jobId == \"$ROLLBACK_DEPLOYMENT_ID\") | .startTime // \"\"")
+          
+          echo "rollback_deployment_id=$ROLLBACK_DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+          echo "rollback_commit=$ROLLBACK_COMMIT" >> $GITHUB_OUTPUT
+          echo "rollback_time=$ROLLBACK_TIME" >> $GITHUB_OUTPUT
+          
+          echo "Selected rollback deployment:"
+          echo "  Deployment ID: $ROLLBACK_DEPLOYMENT_ID"
+          echo "  Commit: $ROLLBACK_COMMIT"
+          echo "  Time: $ROLLBACK_TIME"
+
+      - name: Checkout Rollback Commit
+        if: steps.select-rollback.outputs.rollback_commit != '' && steps.select-rollback.outputs.rollback_commit != 'null'
+        run: |
+          COMMIT=${{ steps.select-rollback.outputs.rollback_commit }}
+          echo "Checking out commit: $COMMIT"
+          
+          if ! git checkout "$COMMIT"; then
+            echo ""
+            echo "WARNING: Could not checkout commit $COMMIT"
+            echo "This may be normal if the app is not connected to a repository"
+            echo "Proceeding with current commit..."
+          else
+            echo "Successfully checked out commit: $COMMIT"
+            git log -1 --oneline
+          fi
+
+      - name: Setup Node.js for Rollback
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies for Rollback
+        working-directory: ./frontend
+        run: |
+          echo "Installing frontend dependencies for rollback..."
+          npm ci || npm install
+
+      - name: Build Frontend for Rollback
+        working-directory: ./frontend
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || '' }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID || '' }}
+        run: |
+          echo "Building frontend for rollback..."
+          npm run build
+          
+          # Verify dist folder was created
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo ""
+            echo "ERROR: Build completed but dist folder is empty or missing"
+            exit 1
+          fi
+          
+          # Create deployment zip
+          cd dist
+          zip -r ../deployment.zip .
+          cd ..
+          
+          if [ ! -f "deployment.zip" ]; then
+            echo ""
+            echo "ERROR: deployment.zip was not created"
+            exit 1
+          fi
+          
+          ZIP_SIZE=$(ls -lh deployment.zip | awk '{print $5}')
+          echo "Rollback deployment zip created successfully (size: $ZIP_SIZE)"
+
+      - name: Cancel Pending Deployments
+        run: |
+          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
+          BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
+          
+          echo "Checking for pending deployments..."
+          PENDING_JOBS=$(aws amplify list-jobs \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --max-results 10 \
+            --query "jobSummaries[?status=='PENDING' || status=='PROVISIONING' || status=='RUNNING'].jobId" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$PENDING_JOBS" ] && [ "$PENDING_JOBS" != "None" ]; then
+            echo "Found pending deployments, cancelling them..."
+            for JOB_ID in $PENDING_JOBS; do
+              echo "  Cancelling job: $JOB_ID"
+              aws amplify stop-job \
+                --app-id "$APP_ID" \
+                --branch-name "$BRANCH_NAME" \
+                --job-id "$JOB_ID" 2>/dev/null || true
+            done
+            sleep 5
+          fi
+
+      - name: Create Rollback Deployment
+        id: rollback-deploy
+        working-directory: ./frontend
+        run: |
+          set +e
+          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
+          BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
+          
+          echo "Creating rollback deployment..."
+          
+          # Create deployment
+          DEPLOYMENT_RESPONSE=$(aws amplify create-deployment \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --output json 2>&1)
+          DEPLOYMENT_EXIT_CODE=$?
+          
+          if [ $DEPLOYMENT_EXIT_CODE -ne 0 ]; then
+            echo ""
+            echo "ERROR: Failed to create rollback deployment"
+            echo "Error: $DEPLOYMENT_RESPONSE"
+            exit 1
+          fi
+          
+          DEPLOYMENT_ID=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.jobId // .jobSummary.jobId')
+          ZIP_UPLOAD_URL=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.zipUploadUrl // .jobSummary.zipUploadUrl')
+          
+          if [ -z "$DEPLOYMENT_ID" ] || [ "$DEPLOYMENT_ID" == "null" ]; then
+            echo "ERROR: Failed to parse deployment response"
+            exit 1
+          fi
+          
+          echo "Uploading rollback artifacts..."
+          
+          # Upload zip
+          UPLOAD_OUTPUT=$(curl -X PUT "$ZIP_UPLOAD_URL" \
+            --upload-file deployment.zip \
+            --header "Content-Type: application/zip" \
+            --write-out "\nHTTP_CODE:%{http_code}" \
+            --silent \
+            --show-error \
+            2>&1)
+          HTTP_CODE=$(echo "$UPLOAD_OUTPUT" | grep "HTTP_CODE" | cut -d: -f2 || echo "N/A")
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Failed to upload artifacts (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+          
+          # Start deployment
+          echo "Starting rollback deployment..."
+          START_RESPONSE=$(aws amplify start-deployment \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --job-id "$DEPLOYMENT_ID" \
+            --output json 2>&1)
+          START_EXIT_CODE=$?
+          
+          if [ $START_EXIT_CODE -ne 0 ]; then
+            echo "ERROR: Failed to start rollback deployment"
+            echo "Error: $START_RESPONSE"
+            exit 1
+          fi
+          
+          echo "rollback_deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+          echo "Rollback deployment started: $DEPLOYMENT_ID"
+
+      - name: Wait for Rollback to Complete
+        run: |
+          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
+          BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
+          DEPLOYMENT_ID=${{ steps.rollback-deploy.outputs.rollback_deployment_id }}
+          
+          echo "Waiting for rollback deployment $DEPLOYMENT_ID to complete..."
+          
+          MAX_WAIT=1800
+          ELAPSED=0
+          SLEEP_INTERVAL=10
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            STATUS=$(aws amplify get-job \
+              --app-id "$APP_ID" \
+              --branch-name "$BRANCH_NAME" \
+              --job-id "$DEPLOYMENT_ID" \
+              --query 'job.summary.status' \
+              --output text 2>/dev/null || echo "PENDING")
+            
+            echo "Rollback status: $STATUS (Elapsed: ${ELAPSED}s)"
+            
+            if [ "$STATUS" = "SUCCEED" ]; then
+              echo "Rollback completed successfully!"
+              exit 0
+            elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
+              echo ""
+              echo "ERROR: Rollback failed with status: $STATUS"
+              exit 1
+            fi
+            
+            sleep $SLEEP_INTERVAL
+            ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
+          done
+          
+          echo "ERROR: Rollback timeout"
+          exit 1
+
+      - name: Rollback Summary
+        run: |
+          echo "## Rollback Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Rolled back to Deployment ID:** ${{ steps.select-rollback.outputs.rollback_deployment_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**New Deployment ID:** ${{ steps.rollback-deploy.outputs.rollback_deployment_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ steps.select-rollback.outputs.rollback_commit }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Rollback has been successfully deployed!" >> $GITHUB_STEP_SUMMARY
+
+  # Normal deployment job - runs when action is 'deploy' or on push
   build-and-deploy:
     name: Build and Deploy Frontend to Amplify
     runs-on: ubuntu-latest
     environment: ${{ inputs.stage || vars.STAGE || 'dev' }}
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.action == 'deploy' || inputs.action == ''))
 
     steps:
       - name: Checkout code
