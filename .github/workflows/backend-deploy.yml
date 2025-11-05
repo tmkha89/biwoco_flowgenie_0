@@ -332,17 +332,6 @@ jobs:
           
           echo "Lambda package created successfully"
           echo "  Size: $ZIP_SIZE (${ZIP_SIZE_MB} MB / ${ZIP_SIZE_BYTES} bytes)"
-          
-          # Check if package is too large for direct upload (50MB limit)
-          MAX_SIZE=$((50 * 1024 * 1024))  # 50MB in bytes
-          if [ "$ZIP_SIZE_BYTES" -gt "$MAX_SIZE" ]; then
-            echo "⚠️  Package size (${ZIP_SIZE_MB} MB) exceeds 50MB direct upload limit"
-            echo "Will upload to S3 and use S3 reference instead"
-            echo "use_s3_upload=true" >> $GITHUB_ENV
-          else
-            echo "✅ Package size is within direct upload limit"
-            echo "use_s3_upload=false" >> $GITHUB_ENV
-          fi
 
       - name: Get Lambda function name
         id: get-lambda
@@ -351,8 +340,7 @@ jobs:
           echo "lambda_function_name=$FUNCTION_NAME" >> $GITHUB_OUTPUT
           echo "Target Lambda function: $FUNCTION_NAME"
 
-      - name: Upload Lambda package to S3 (if needed)
-        if: env.use_s3_upload == 'true'
+      - name: Upload Lambda package to S3
         working-directory: ./backend
         run: |
           STAGE="${{ env.STAGE }}"
@@ -369,8 +357,9 @@ jobs:
           echo "Uploading Lambda package to S3..."
           aws s3 cp lambda-api.zip "s3://$BUCKET_NAME/$S3_KEY" --region ${{ env.AWS_REGION }}
           
-          echo "S3 bucket: $BUCKET_NAME"
-          echo "S3 key: $S3_KEY"
+          echo "✅ Package uploaded to S3"
+          echo "  Bucket: $BUCKET_NAME"
+          echo "  Key: $S3_KEY"
           echo "s3_bucket=$BUCKET_NAME" >> $GITHUB_ENV
           echo "s3_key=$S3_KEY" >> $GITHUB_ENV
 
@@ -379,7 +368,7 @@ jobs:
         run: |
           FUNCTION_NAME="${{ steps.get-lambda.outputs.lambda_function_name }}"
           
-          echo "Updating Lambda function code..."
+          echo "Updating Lambda function code from S3..."
           
           # Check if function exists
           if ! aws lambda get-function --function-name "$FUNCTION_NAME" >/dev/null 2>&1; then
@@ -388,23 +377,14 @@ jobs:
             exit 1
           fi
           
-          # Update function code (direct upload or S3)
-          if [ "${{ env.use_s3_upload }}" == "true" ]; then
-            echo "Using S3 upload method..."
-            aws lambda update-function-code \
-              --function-name "$FUNCTION_NAME" \
-              --s3-bucket "${{ env.s3_bucket }}" \
-              --s3-key "${{ env.s3_key }}" \
-              --region ${{ env.AWS_REGION }}
-          else
-            echo "Using direct upload method..."
-            aws lambda update-function-code \
-              --function-name "$FUNCTION_NAME" \
-              --zip-file fileb://lambda-api.zip \
-              --region ${{ env.AWS_REGION }}
-          fi
+          # Update function code from S3
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --s3-bucket "${{ env.s3_bucket }}" \
+            --s3-key "${{ env.s3_key }}" \
+            --region ${{ env.AWS_REGION }}
           
-          echo "Lambda function code updated successfully"
+          echo "✅ Lambda function code updated successfully"
 
       - name: Wait for Lambda update
         run: |
