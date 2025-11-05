@@ -26,11 +26,16 @@ env:
   NODE_VERSION: '24'
 
 jobs:
-  # Deploy Backend to App Runner
-  deploy-app-runner:
-    name: Deploy Backend to App Runner
+  # Build and push Docker image to ECR
+  build-and-push-ecr:
+    name: Build and Push to ECR
     runs-on: ubuntu-latest
     environment: ${{ inputs.stage || 'dev' }}
+    
+    outputs:
+      ecr_image_uri: ${{ steps.build-ecr.outputs.ecr_image_uri }}
+      ecr_repository: ${{ steps.build-ecr.outputs.ecr_repository }}
+      image_tag: ${{ steps.build-ecr.outputs.image_tag }}
     
     steps:
       - name: Checkout code
@@ -95,6 +100,8 @@ jobs:
           STAGE="${{ env.STAGE }}"
           REPO_NAME="${STAGE}-flowgenie-backend"
           
+          echo "Target ECR repository: $REPO_NAME"
+          
           # Check if repository exists (should be created by Terraform)
           if ! aws ecr describe-repositories --repository-names "$REPO_NAME" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
             echo "ERROR: ECR repository '$REPO_NAME' does not exist"
@@ -109,11 +116,12 @@ jobs:
             --query 'repositories[0].repositoryUri' \
             --output text)
           
-          echo "ECR Repository: $REPO_URI"
+          echo "✅ ECR Repository found: $REPO_URI"
           echo "ecr_repository=$REPO_URI" >> $GITHUB_ENV
           echo "ecr_repo_name=$REPO_NAME" >> $GITHUB_ENV
 
       - name: Build, tag, and push Docker image to Amazon ECR
+        id: build-ecr
         working-directory: ./backend
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -121,25 +129,71 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Building Docker image..."
+          echo "Repository: $ECR_REPOSITORY"
+          echo "Tag: $IMAGE_TAG"
+          echo ""
+          
           docker build \
             -f Dockerfile \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
           
+          echo ""
           echo "Pushing Docker image to ECR..."
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           
+          echo ""
           echo "✅ Docker image pushed successfully"
           echo "  Image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           echo "  Latest: $ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          
+          echo "ecr_image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "ecr_repository=$ECR_REGISTRY/$ECR_REPOSITORY" >> $GITHUB_OUTPUT
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          
           echo "ecr_image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Display build summary
+        run: |
+          echo "## 🐳 Docker Image Built and Pushed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**ECR Repository:** \`${{ steps.build-ecr.outputs.ecr_repository }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** \`${{ steps.build-ecr.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image URI:** \`${{ steps.build-ecr.outputs.ecr_image_uri }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Docker image successfully pushed to ECR repository: \`${{ env.STAGE }}-flowgenie-backend\`" >> $GITHUB_STEP_SUMMARY
+
+  # Deploy Backend to App Runner
+  deploy-app-runner:
+    name: Deploy Backend to App Runner
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || 'dev' }}
+    needs: build-and-push-ecr
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Set ECR image URI from build job
+        run: |
+          echo "Using Docker image from build job:"
+          echo "  Image URI: ${{ needs.build-and-push-ecr.outputs.ecr_image_uri }}"
+          echo "ecr_image_uri=${{ needs.build-and-push-ecr.outputs.ecr_image_uri }}" >> $GITHUB_ENV
 
       - name: Get App Runner service details
         id: get-app-runner
         run: |
           STAGE="${{ env.STAGE }}"
-          SERVICE_NAME="${STAGE}-flowgenie-apprunner-backend"
+          SERVICE_NAME="${STAGE}-flowgenie-backend"
           
           echo "Checking App Runner service: $SERVICE_NAME"
           
