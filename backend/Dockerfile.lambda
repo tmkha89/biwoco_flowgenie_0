@@ -66,8 +66,11 @@ RUN if [ ! -f lambda.js ]; then \
     echo "File sizes:" && \
     ls -lh lambda.js app.module.js database/database.module.js 2>/dev/null || true && \
     echo "" && \
-    echo "Testing if lambda.js can be required (checking syntax):" && \
-    node -e "const lambda = require('./lambda.js'); console.log('✅ lambda.js syntax is valid'); console.log('Exported handler:', typeof lambda.handler);" || echo "⚠️  Warning: lambda.js may have syntax issues" && \
+    echo "Testing if lambda.js has valid syntax (without executing module):" && \
+    node --check lambda.js && echo "✅ lambda.js syntax is valid" || echo "⚠️  Warning: lambda.js has syntax errors" && \
+    echo "" && \
+    echo "Verifying handler export exists:" && \
+    (node -e "const fs = require('fs'); const content = fs.readFileSync('lambda.js', 'utf8'); console.log(content.includes('exports.handler') || content.includes('module.exports.handler') || content.includes('export') ? '✅ Handler export found' : '⚠️  Handler export may be missing');" 2>/dev/null || echo "⚠️  Could not verify handler export") && \
     echo "" && \
     echo "=== Final directory structure check ===" && \
     echo "Working directory: $(pwd)" && \

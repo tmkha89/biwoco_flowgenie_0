@@ -457,17 +457,47 @@ jobs:
             --query 'DBInstances[0].MasterUsername' \
             --output text 2>/dev/null || echo "flowgenie_admin")
           
-          # Get Redis endpoint (if exists)
-          REDIS_REPLICATION_GROUP="${STAGE}-flowgenie-redis"
-          REDIS_ENDPOINT=$(aws elasticache describe-replication-groups \
-            --replication-group-id "$REDIS_REPLICATION_GROUP" \
-            --region ${{ env.AWS_REGION }} \
-            --query 'ReplicationGroups[0].ConfigurationEndpoint.Address' \
-            --output text 2>/dev/null || echo "")
+          # Get Redis URL - first check GitHub variable, then fall back to AWS ElastiCache
+          REDIS_URL_FROM_VAR="${{ vars.REDIS_URL }}"
+          REDIS_ENDPOINT=""
+          
+          if [ -n "$REDIS_URL_FROM_VAR" ] && [ "$REDIS_URL_FROM_VAR" != "" ]; then
+            echo "✅ Using REDIS_URL from GitHub variable"
+            REDIS_URL="$REDIS_URL_FROM_VAR"
+          else
+            echo "⚠️  REDIS_URL variable not set, attempting to get from AWS ElastiCache"
+            REDIS_REPLICATION_GROUP="${STAGE}-flowgenie-redis"
+            
+            # For Redis OSS (non-cluster mode), use PrimaryEndpoint.Address
+            # ConfigurationEndpoint is only available for Redis Cluster mode
+            REDIS_ENDPOINT=$(aws elasticache describe-replication-groups \
+              --replication-group-id "$REDIS_REPLICATION_GROUP" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'ReplicationGroups[0].PrimaryEndpoint.Address' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$REDIS_ENDPOINT" ] && [ "$REDIS_ENDPOINT" != "None" ]; then
+              # Get the port (default is 6379, but check if it's different)
+              REDIS_PORT=$(aws elasticache describe-replication-groups \
+                --replication-group-id "$REDIS_REPLICATION_GROUP" \
+                --region ${{ env.AWS_REGION }} \
+                --query 'ReplicationGroups[0].Port' \
+                --output text 2>/dev/null || echo "6379")
+              
+              REDIS_URL="redis://${REDIS_ENDPOINT}:${REDIS_PORT}"
+              echo "✅ Constructed REDIS_URL from ElastiCache Redis OSS endpoint: ${REDIS_ENDPOINT}:${REDIS_PORT}"
+            else
+              REDIS_URL=""
+              echo "⚠️  Could not get Redis endpoint from AWS ElastiCache"
+              echo "   Replication group ID: $REDIS_REPLICATION_GROUP"
+              echo "   Region: ${{ env.AWS_REGION }}"
+            fi
+          fi
           
           # Redis AUTH token is sensitive and cannot be retrieved via AWS CLI
           # It can be set via GitHub secret REDIS_AUTH_TOKEN or Terraform
           # If not available from secret, we'll leave it as is (may be set by Terraform)
+          REDIS_AUTH_TOKEN="${{ secrets.REDIS_AUTH_TOKEN }}"
           if [ -z "$REDIS_AUTH_TOKEN" ]; then
             REDIS_AUTH_TOKEN=""
           fi
@@ -502,26 +532,31 @@ jobs:
             fi
           fi
           
-          # Update REDIS_URL if missing and Redis is available
+          # Update REDIS_URL if missing
           if [ -z "$(echo "$UPDATED_ENV" | jq -r '.REDIS_URL // empty')" ]; then
-            if [ -n "$REDIS_ENDPOINT" ]; then
-              REDIS_URL="redis://${REDIS_ENDPOINT}:6379"
-              echo "Setting REDIS_URL=$REDIS_URL"
+            if [ -n "$REDIS_URL" ] && [ "$REDIS_URL" != "" ]; then
+              echo "Setting REDIS_URL (from GitHub variable or AWS ElastiCache)"
               UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg redis_url "$REDIS_URL" '. + {REDIS_URL: $redis_url}')
             else
-              echo "⚠️  REDIS_URL not set (Redis endpoint not found, optional)"
+              echo "⚠️  REDIS_URL not set (GitHub variable not set and Redis endpoint not found, optional)"
             fi
+          else
+            echo "✅ REDIS_URL already set in Lambda, skipping update"
           fi
           
-          # Update REDIS_AUTH_TOKEN if missing and we have it from secrets (optional)
-          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.REDIS_AUTH_TOKEN // empty')" ] && [ -n "$REDIS_ENDPOINT" ]; then
-            if [ -n "$REDIS_AUTH_TOKEN" ]; then
-              echo "Setting REDIS_AUTH_TOKEN (masked)"
-              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg token "$REDIS_AUTH_TOKEN" '. + {REDIS_AUTH_TOKEN: $token}')
-            else
-              echo "⚠️  REDIS_AUTH_TOKEN not set (may be required if Redis AUTH is enabled)"
-              echo "   Set GitHub secret REDIS_AUTH_TOKEN or ensure Terraform sets it"
+          # Update REDIS_AUTH_TOKEN if missing and Redis is configured (optional)
+          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.REDIS_AUTH_TOKEN // empty')" ]; then
+            if [ -n "$REDIS_URL" ] || [ -n "$REDIS_ENDPOINT" ]; then
+              if [ -n "$REDIS_AUTH_TOKEN" ]; then
+                echo "Setting REDIS_AUTH_TOKEN (masked)"
+                UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg token "$REDIS_AUTH_TOKEN" '. + {REDIS_AUTH_TOKEN: $token}')
+              else
+                echo "⚠️  REDIS_AUTH_TOKEN not set (may be required if Redis AUTH is enabled)"
+                echo "   Set GitHub secret REDIS_AUTH_TOKEN or ensure Terraform sets it"
+              fi
             fi
+          else
+            echo "✅ REDIS_AUTH_TOKEN already set in Lambda, skipping update"
           fi
           
           # Check if update is needed
