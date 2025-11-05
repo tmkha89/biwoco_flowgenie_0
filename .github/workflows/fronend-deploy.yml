@@ -1,0 +1,184 @@
+name: Deploy Frontend to AWS Amplify
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'FrontEnd/**'
+      - '.github/workflows/frontend-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Deployment stage (dev/staging/prod)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+  STAGE: ${{ inputs.stage || vars.STAGE || 'dev' }}
+  NODE_VERSION: '24'
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy Frontend to Amplify
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || vars.STAGE || 'dev' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: FrontEnd/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: ./FrontEnd
+        run: npm ci
+
+      - name: Run frontend linting
+        working-directory: ./FrontEnd
+        run: npm run lint || echo "Linting failed but continuing..."
+
+      - name: Build frontend
+        working-directory: ./FrontEnd
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || '' }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID || '' }}
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Amplify App ID
+        id: get-amplify-app
+        run: |
+          # Try to get Amplify App ID from Terraform outputs
+          APP_ID=$(aws amplify list-apps \
+            --query "apps[?name=='${STAGE}-flowgenie-frontend'].appId" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$APP_ID" ]; then
+            echo "Amplify app not found. Please ensure the Amplify app is created via Terraform first."
+            exit 1
+          fi
+          
+          echo "amplify_app_id=$APP_ID" >> $GITHUB_OUTPUT
+          echo "Found Amplify App ID: $APP_ID"
+
+      - name: Get Amplify Branch Name
+        id: get-branch
+        run: |
+          # Use main branch as specified
+          BRANCH_NAME="main"
+          echo "amplify_branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "Deploying to branch: $BRANCH_NAME"
+
+      - name: Start Amplify Build
+        id: start-build
+        run: |
+          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
+          BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
+          
+          echo "Starting Amplify build for app: $APP_ID, branch: $BRANCH_NAME"
+          
+          # Start a new build
+          JOB_ID=$(aws amplify start-job \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --job-type RELEASE \
+            --query 'jobSummary.jobId' \
+            --output text)
+          
+          if [ -z "$JOB_ID" ]; then
+            echo "Failed to start Amplify build"
+            exit 1
+          fi
+          
+          echo "amplify_job_id=$JOB_ID" >> $GITHUB_OUTPUT
+          echo "Started Amplify build job: $JOB_ID"
+
+      - name: Wait for Amplify Build to Complete
+        run: |
+          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
+          BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
+          JOB_ID=${{ steps.start-build.outputs.amplify_job_id }}
+          
+          echo "Waiting for build job $JOB_ID to complete..."
+          
+          MAX_WAIT=1800  # 30 minutes
+          ELAPSED=0
+          SLEEP_INTERVAL=10
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            STATUS=$(aws amplify get-job \
+              --app-id "$APP_ID" \
+              --branch-name "$BRANCH_NAME" \
+              --job-id "$JOB_ID" \
+              --query 'job.summary.status' \
+              --output text)
+            
+            echo "Build status: $STATUS (Elapsed: ${ELAPSED}s)"
+            
+            if [ "$STATUS" = "SUCCEED" ]; then
+              echo "Build completed successfully!"
+              exit 0
+            elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
+              echo "Build failed with status: $STATUS"
+              
+              # Get build logs
+              echo "Fetching build logs..."
+              aws amplify get-job \
+                --app-id "$APP_ID" \
+                --branch-name "$BRANCH_NAME" \
+                --job-id "$JOB_ID" \
+                --query 'job.steps[*].[stepName,status,logUrl]' \
+                --output table || true
+              
+              exit 1
+            fi
+            
+            sleep $SLEEP_INTERVAL
+            ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
+          done
+          
+          echo "Build timeout after ${MAX_WAIT} seconds"
+          exit 1
+
+      - name: Get Amplify App URL
+        id: get-url
+        run: |
+          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
+          BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
+          
+          # Get the app URL
+          APP_URL="https://${BRANCH_NAME}.${APP_ID}.amplifyapp.com"
+          
+          echo "amplify_app_url=$APP_URL" >> $GITHUB_OUTPUT
+          echo "Amplify App URL: $APP_URL"
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🚀 Frontend Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ steps.get-branch.outputs.amplify_branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "**App ID:** ${{ steps.get-amplify-app.outputs.amplify_app_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Job ID:** ${{ steps.start-build.outputs.amplify_job_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**App URL:** [${{ steps.get-url.outputs.amplify_app_url }}](${{ steps.get-url.outputs.amplify_app_url }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Frontend has been successfully deployed to AWS Amplify!" >> $GITHUB_STEP_SUMMARY

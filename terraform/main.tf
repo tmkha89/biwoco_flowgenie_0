@@ -170,6 +170,7 @@ module "amplify" {
 
   repository_url = var.amplify_repository_url
   branch_name    = var.amplify_branch_name
+  devops_token   = var.devops_token
 
   environment_variables = var.frontend_environment_variables
 
