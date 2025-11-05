@@ -70,7 +70,7 @@ jobs:
             -var="db_username=${{ env.db_username }}" \
             -var="db_password=${{ env.db_password }}" \
             -var="amplify_repository_url=${{ env.amplify_repository_url }}" \
-            -var="devops_token=${{ env.devops_token }}" \
+            -var="devops_token=${{ secrets.DEVOPS_TOKEN }}" \
             -out=tfplan
 
       - name: Terraform Apply
