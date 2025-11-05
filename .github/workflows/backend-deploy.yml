@@ -422,9 +422,7 @@ jobs:
         env:
           # Secrets from GitHub Secrets
           APP_URL: ${{ secrets.APP_URL }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_DYNAMODB: ${{ secrets.AWS_DYNAMODB }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -436,6 +434,8 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           REDIS_URL: ${{ secrets.REDIS_URL }}
           REDIS_AUTH_TOKEN: ${{ secrets.REDIS_AUTH_TOKEN }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
           # Variables from GitHub Variables
           AMPLIFY_BRANCH_NAME: ${{ vars.AMPLIFY_BRANCH_NAME }}
           AMPLIFY_DOMAIN: ${{ vars.AMPLIFY_DOMAIN }}
@@ -449,8 +449,6 @@ jobs:
           GOOGLE_PROJECT_NAME: ${{ vars.GOOGLE_PROJECT_NAME }}
           GOOGLE_REDIRECT_URI: ${{ vars.GOOGLE_REDIRECT_URI }}
           JWT_EXPIRES_IN: ${{ vars.JWT_EXPIRES_IN }}
-          REDIS_HOST: ${{ vars.REDIS_HOST }}
-          REDIS_PORT: ${{ vars.REDIS_PORT }}
           REFRESH_TOKEN_EXPIRES_IN: ${{ vars.REFRESH_TOKEN_EXPIRES_IN }}
           STAGE_VAR: ${{ vars.STAGE }}
         run: |
