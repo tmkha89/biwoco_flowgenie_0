@@ -4,20 +4,41 @@ output "amplify_app_id" {
   value       = module.amplify.app_id
 }
 
-# API Gateway Outputs
-output "api_gateway_url" {
-  description = "API Gateway endpoint URL"
-  value       = module.api.api_url
+# API Gateway Outputs (DISABLED - using App Runner instead)
+# output "api_gateway_url" {
+#   description = "API Gateway endpoint URL"
+#   value       = module.api.api_url
+# }
+#
+# output "api_gateway_arn" {
+#   description = "API Gateway ARN"
+#   value       = module.api.api_arn
+# }
+#
+# output "api_gateway_rest_api_id" {
+#   description = "API Gateway REST API ID"
+#   value       = module.api.rest_api_id
+# }
+
+# App Runner Outputs
+output "app_runner_service_url" {
+  description = "App Runner service URL"
+  value       = module.app_runner.service_url
 }
 
-output "api_gateway_arn" {
-  description = "API Gateway ARN"
-  value       = module.api.api_arn
+output "app_runner_service_arn" {
+  description = "App Runner service ARN"
+  value       = module.app_runner.service_arn
 }
 
-output "api_gateway_rest_api_id" {
-  description = "API Gateway REST API ID"
-  value       = module.api.rest_api_id
+output "app_runner_service_id" {
+  description = "App Runner service ID"
+  value       = module.app_runner.service_id
+}
+
+output "app_runner_ecr_repository_url" {
+  description = "App Runner ECR repository URL"
+  value       = module.app_runner.ecr_repository_url
 }
 
 # RDS Outputs

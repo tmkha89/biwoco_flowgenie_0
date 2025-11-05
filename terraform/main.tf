@@ -112,12 +112,39 @@ module "elasticache" {
   }
 }
 
-# Lambda + API Gateway Module
-module "api" {
-  source = "./modules/api-gateway-lambda"
+# Lambda + API Gateway Module (DISABLED - using App Runner instead)
+# module "api" {
+#   source = "./modules/api-gateway-lambda"
+#
+#   stage      = var.stage
+#   aws_region = var.aws_region
+#
+#   vpc_id             = module.vpc.vpc_id
+#   subnet_ids         = module.vpc.private_subnet_ids
+#   security_group_ids = [module.backend_security_group.security_group_id]
+#   rds_endpoint       = module.rds.address
+#   redis_endpoint     = module.elasticache.endpoint
+#   redis_auth_token   = module.elasticache.auth_token
+#   db_name            = var.db_name
+#   db_username        = var.db_username
+#   db_password        = var.db_password
+#
+#   environment_variables = var.backend_environment_variables
+#
+#   tags = {
+#     Name = "${var.project_name}-${var.stage}-api"
+#   }
+# }
+
+# App Runner Module for Backend
+module "app_runner" {
+  source = "./modules/app-runner"
 
   stage      = var.stage
   aws_region = var.aws_region
+
+  github_repository_url = var.amplify_repository_url != "" ? var.amplify_repository_url : "https://github.com/your-org/your-repo"
+  github_branch         = var.amplify_branch_name
 
   vpc_id             = module.vpc.vpc_id
   subnet_ids         = module.vpc.private_subnet_ids
@@ -132,7 +159,7 @@ module "api" {
   environment_variables = var.backend_environment_variables
 
   tags = {
-    Name = "${var.project_name}-${var.stage}-api"
+    Name = "${var.project_name}-${var.stage}-app-runner"
   }
 }
 

@@ -1,0 +1,383 @@
+name: Deploy Backend to App Runner
+
+on:
+  push:
+    branches:
+      - main
+      - features/pipeline_backend
+    paths:
+      - 'backend/**'
+      - '.github/workflows/app-runner-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Deployment stage (dev/staging/prod)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+  STAGE: ${{ inputs.stage || 'dev' }}
+
+jobs:
+  # Trigger App Runner Deployment
+  trigger-app-runner:
+    name: Trigger App Runner Deployment
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || 'dev' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get App Runner service details
+        id: get-app-runner
+        run: |
+          STAGE="${{ env.STAGE }}"
+          SERVICE_NAME="${STAGE}-flowgenie-apprunner-backend"
+          
+          echo "Checking App Runner service: $SERVICE_NAME"
+          
+          # Get service ARN
+          SERVICE_ARN=$(aws apprunner list-services \
+            --region ${{ env.AWS_REGION }} \
+            --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" \
+            --output text)
+          
+          if [ -z "$SERVICE_ARN" ] || [ "$SERVICE_ARN" == "None" ]; then
+            echo "ERROR: App Runner service '$SERVICE_NAME' does not exist"
+            echo "Please run infrastructure deployment first (infra-deploy workflow)"
+            exit 1
+          fi
+          
+          SERVICE_URL=$(aws apprunner describe-service \
+            --service-arn "$SERVICE_ARN" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Service.ServiceUrl' \
+            --output text)
+          
+          echo "App Runner Service ARN: $SERVICE_ARN"
+          echo "App Runner Service URL: $SERVICE_URL"
+          echo "service_arn=$SERVICE_ARN" >> $GITHUB_ENV
+          echo "service_url=$SERVICE_URL" >> $GITHUB_ENV
+          
+          echo "✅ App Runner service found"
+          echo "Service URL: $SERVICE_URL"
+
+      - name: Update App Runner environment variables
+        env:
+          # Secrets from GitHub Secrets
+          APP_URL: ${{ secrets.APP_URL }}
+          AWS_DYNAMODB: ${{ secrets.AWS_DYNAMODB }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DEVOPS_TOKEN: ${{ secrets.DEVOPS_TOKEN }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          REDIS_AUTH_TOKEN: ${{ secrets.REDIS_AUTH_TOKEN }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+          # Variables from GitHub Variables
+          AMPLIFY_BRANCH_NAME: ${{ vars.AMPLIFY_BRANCH_NAME }}
+          AMPLIFY_DOMAIN: ${{ vars.AMPLIFY_DOMAIN }}
+          AMPLIFY_REPOSITORY_URL: ${{ vars.AMPLIFY_REPOSITORY_URL }}
+          BACKEND_ENVIRONMENT_VARIABLES: ${{ vars.BACKEND_ENVIRONMENT_VARIABLES }}
+          DB_NAME: ${{ vars.DB_NAME }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          ENABLE_SWAGGER: ${{ vars.ENABLE_SWAGGER }}
+          FRONTEND_ENVIRONMENT_VARIABLES: ${{ vars.FRONTEND_ENVIRONMENT_VARIABLES }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          GOOGLE_PROJECT_NAME: ${{ vars.GOOGLE_PROJECT_NAME }}
+          GOOGLE_REDIRECT_URI: ${{ vars.GOOGLE_REDIRECT_URI }}
+          JWT_EXPIRES_IN: ${{ vars.JWT_EXPIRES_IN }}
+          REFRESH_TOKEN_EXPIRES_IN: ${{ vars.REFRESH_TOKEN_EXPIRES_IN }}
+          STAGE_VAR: ${{ vars.STAGE }}
+        run: |
+          SERVICE_ARN="${{ env.service_arn }}"
+          STAGE="${{ env.STAGE }}"
+          
+          # Ensure jq is available
+          if ! command -v jq &> /dev/null; then
+            echo "jq is required but not installed. Installing..."
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+          
+          echo "Updating App Runner environment variables from GitHub Secrets and Variables..."
+          
+          # Get current App Runner service configuration
+          SERVICE_CONFIG=$(aws apprunner describe-service \
+            --service-arn "$SERVICE_ARN" \
+            --region ${{ env.AWS_REGION }} \
+            --output json)
+          
+          CURRENT_ENV=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues.RuntimeEnvironmentVariables // {}')
+          
+          echo "Current App Runner environment variables:"
+          echo "$CURRENT_ENV" | jq '.'
+          
+          # Start with current environment variables
+          UPDATED_ENV=$(echo "$CURRENT_ENV" | jq -c '.')
+          
+          # List of all secrets to inject (from GitHub Secrets)
+          SECRETS=(
+            "APP_URL"
+            "AWS_DYNAMODB"
+            "CORS_ORIGINS"
+            "DATABASE_URL"
+            "DB_PASSWORD"
+            "DEVOPS_TOKEN"
+            "FRONTEND_URL"
+            "GOOGLE_APPLICATION_CREDENTIALS"
+            "GOOGLE_CLIENT_SECRET"
+            "GOOGLE_SERVICE_ACCOUNT"
+            "JWT_SECRET"
+            "REDIS_URL"
+            "REDIS_HOST"
+            "REDIS_PORT"
+            "REDIS_AUTH_TOKEN"
+          )
+          
+          # List of all variables to inject (from GitHub Variables)
+          VARIABLES=(
+            "AMPLIFY_BRANCH_NAME"
+            "AMPLIFY_DOMAIN"
+            "AMPLIFY_REPOSITORY_URL"
+            "BACKEND_ENVIRONMENT_VARIABLES"
+            "DB_NAME"
+            "DB_USERNAME"
+            "ENABLE_SWAGGER"
+            "FRONTEND_ENVIRONMENT_VARIABLES"
+            "GOOGLE_CLIENT_ID"
+            "GOOGLE_PROJECT_NAME"
+            "GOOGLE_REDIRECT_URI"
+            "JWT_EXPIRES_IN"
+            "REFRESH_TOKEN_EXPIRES_IN"
+            "STAGE"
+          )
+          
+          # Inject secrets
+          echo ""
+          echo "🔐 Injecting secrets from GitHub Secrets..."
+          for secret_name in "${SECRETS[@]}"; do
+            # Get the value from environment (mapped from secrets)
+            secret_value=$(eval echo \$$secret_name)
+            
+            if [ -n "$secret_value" ] && [ "$secret_value" != "" ]; then
+              echo "  Setting $secret_name (masked)"
+              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg key "$secret_name" --arg value "$secret_value" '. + {($key): $value}')
+            else
+              echo "  ⚠️  $secret_name not set in GitHub Secrets, skipping"
+            fi
+          done
+          
+          # Inject variables
+          echo ""
+          echo "📝 Injecting variables from GitHub Variables..."
+          for var_name in "${VARIABLES[@]}"; do
+            # Handle special case: STAGE_VAR -> STAGE
+            env_var_name="$var_name"
+            if [ "$var_name" = "STAGE" ]; then
+              env_var_name="STAGE_VAR"
+            fi
+            
+            # Get the value from environment (mapped from vars)
+            var_value=$(eval echo \$$env_var_name)
+            
+            if [ -n "$var_value" ] && [ "$var_value" != "" ]; then
+              echo "  Setting $var_name = $var_value"
+              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg key "$var_name" --arg value "$var_value" '. + {($key): $value}')
+            else
+              echo "  ⚠️  $var_name not set in GitHub Variables, skipping"
+            fi
+          done
+          
+          # Set NODE_ENV based on STAGE if not already set
+          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.NODE_ENV // empty')" ]; then
+            NODE_ENV_VALUE="production"
+            if [ "$STAGE" != "prod" ]; then
+              NODE_ENV_VALUE="$STAGE"
+            fi
+            echo "  Setting NODE_ENV=$NODE_ENV_VALUE"
+            UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg env "$NODE_ENV_VALUE" '. + {NODE_ENV: $env}')
+          fi
+          
+          # Get current service configuration to preserve other settings
+          REPO_URL=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.CodeRepository.RepositoryUrl')
+          BRANCH=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.CodeRepository.SourceCodeVersion.Value')
+          CONNECTION_ARN=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.AuthenticationConfiguration.ConnectionArn')
+          BUILD_COMMAND=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues.BuildCommand')
+          START_COMMAND=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues.StartCommand // ""')
+          PORT=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues.RuntimeEnvironmentVariables.PORT // "3000"')
+          
+          # Convert environment variables to App Runner format (array of key-value pairs)
+          ENV_VARS_ARRAY=$(echo "$UPDATED_ENV" | jq -r 'to_entries | map("Name=\(.key),Value=\(.value)") | join(" ")')
+          
+          # Create update configuration JSON
+          UPDATE_CONFIG=$(jq -n \
+            --arg repo_url "$REPO_URL" \
+            --arg branch "$BRANCH" \
+            --arg connection_arn "$CONNECTION_ARN" \
+            --arg build_command "$BUILD_COMMAND" \
+            --arg start_command "$START_COMMAND" \
+            --arg port "$PORT" \
+            --argjson env_vars "$UPDATED_ENV" \
+            '{
+              "SourceConfiguration": {
+                "CodeRepository": {
+                  "RepositoryUrl": $repo_url,
+                  "SourceCodeVersion": {
+                    "Type": "BRANCH",
+                    "Value": $branch
+                  },
+                  "CodeConfiguration": {
+                    "ConfigurationSource": "API",
+                    "CodeConfigurationValues": {
+                      "BuildCommand": $build_command,
+                      "Runtime": "DOCKER",
+                      "RuntimeEnvironmentVariables": $env_vars,
+                      "StartCommand": $start_command
+                    }
+                  }
+                },
+                "AuthenticationConfiguration": {
+                  "ConnectionArn": $connection_arn
+                },
+                "AutoDeploymentsEnabled": true
+              }
+            }')
+          
+          # Check if update is needed
+          CURRENT_ENV_STR=$(echo "$CURRENT_ENV" | jq -c -S '.')
+          UPDATED_ENV_STR=$(echo "$UPDATED_ENV" | jq -c -S '.')
+          
+          if [ "$CURRENT_ENV_STR" != "$UPDATED_ENV_STR" ]; then
+            echo ""
+            echo "Updating App Runner service environment variables..."
+            
+            # Save update config to temp file
+            UPDATE_CONFIG_FILE=$(mktemp)
+            echo "$UPDATE_CONFIG" > "$UPDATE_CONFIG_FILE"
+            
+            # Update App Runner service
+            aws apprunner update-service \
+              --service-arn "$SERVICE_ARN" \
+              --source-configuration "file://$UPDATE_CONFIG_FILE" \
+              --region ${{ env.AWS_REGION }} > /dev/null
+            
+            echo "✅ App Runner service environment variables updated"
+            echo "Waiting for service update to complete..."
+            
+            # Wait for service update
+            aws apprunner wait service-updated \
+              --service-arn "$SERVICE_ARN" \
+              --region ${{ env.AWS_REGION }}
+            
+            echo "✅ App Runner service update completed"
+            
+            # Clean up temp file
+            rm -f "$UPDATE_CONFIG_FILE"
+          else
+            echo ""
+            echo "✅ No changes detected - environment variables are up to date"
+          fi
+          
+          echo ""
+          echo "Updated App Runner environment variables:"
+          echo "$UPDATED_ENV" | jq '.'
+
+      - name: Trigger manual deployment (if auto-deploy is disabled)
+        run: |
+          SERVICE_ARN="${{ env.service_arn }}"
+          
+          echo "App Runner will automatically deploy when code is pushed to GitHub"
+          echo "(Auto-deploy must be enabled in App Runner configuration)"
+          
+          # Check current operation status
+          OPERATION_STATUS=$(aws apprunner list-operations \
+            --service-arn "$SERVICE_ARN" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'OperationSummaryList[0].Status' \
+            --output text 2>/dev/null || echo "UNKNOWN")
+          
+          echo "Current operation status: $OPERATION_STATUS"
+          
+          # If auto-deploy is enabled, App Runner will automatically deploy
+          # If not, we can manually trigger a deployment
+          if [ "$OPERATION_STATUS" == "IN_PROGRESS" ] || [ "$OPERATION_STATUS" == "PENDING" ]; then
+            echo "Deployment already in progress..."
+          else
+            echo "Note: If auto-deploy is disabled, you may need to manually trigger deployment"
+            echo "via AWS Console or CLI: aws apprunner start-deployment --service-arn $SERVICE_ARN"
+          fi
+
+      - name: Wait for deployment to complete
+        run: |
+          SERVICE_ARN="${{ env.service_arn }}"
+          MAX_WAIT=600
+          ELAPSED=0
+          
+          echo "Waiting for App Runner deployment to complete..."
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            # Get current operation status
+            OPERATION_STATUS=$(aws apprunner list-operations \
+              --service-arn "$SERVICE_ARN" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'OperationSummaryList[0].Status' \
+              --output text 2>/dev/null || echo "UNKNOWN")
+            
+            if [ "$OPERATION_STATUS" == "IN_PROGRESS" ] || [ "$OPERATION_STATUS" == "PENDING" ]; then
+              echo "Deployment in progress... (Status: $OPERATION_STATUS, Elapsed: ${ELAPSED}s)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            else
+              echo "Deployment status: $OPERATION_STATUS"
+              break
+            fi
+          done
+          
+          # Get service status
+          SERVICE_STATUS=$(aws apprunner describe-service \
+            --service-arn "$SERVICE_ARN" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Service.Status' \
+            --output text)
+          
+          echo "App Runner Service Status: $SERVICE_STATUS"
+          
+          if [ "$SERVICE_STATUS" == "RUNNING" ]; then
+            echo "✅ App Runner service is running"
+          else
+            echo "⚠️  App Runner service status: $SERVICE_STATUS"
+          fi
+
+      - name: Display deployment information
+        run: |
+          echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**App Runner Service:** ${{ env.STAGE }}-flowgenie-apprunner-backend" >> $GITHUB_STEP_SUMMARY
+          echo "**Service URL:** ${{ env.service_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Source:** GitHub (direct deployment)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Backend deployed successfully to App Runner" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Environment variables updated from GitHub Secrets and Variables" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Note: App Runner automatically deploys when code is pushed to GitHub" >> $GITHUB_STEP_SUMMARY
+          echo "(Auto-deploy must be enabled in App Runner configuration)" >> $GITHUB_STEP_SUMMARY

@@ -234,11 +234,12 @@ jobs:
           
           echo "✅ Database migrations completed successfully"
 
-  # Deploy Lambda Backend
+  # Deploy Lambda Backend (DISABLED - using App Runner instead)
   deploy-lambda:
     name: Deploy Lambda Backend
     runs-on: ubuntu-latest
     environment: ${{ inputs.stage || 'dev' }}
+    if: false  # Disabled - using App Runner instead
     
     steps:
       - name: Checkout code
