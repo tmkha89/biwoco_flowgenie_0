@@ -13,18 +13,18 @@ resource "aws_amplify_app" "main" {
       phases:
         preBuild:
           commands:
-            - cd FrontEnd
+            - cd frontend
             - npm ci
         build:
           commands:
             - npm run build
       artifacts:
-        baseDirectory: FrontEnd/dist
+        baseDirectory: frontend/dist
         files:
           - '**/*'
       cache:
         paths:
-          - FrontEnd/node_modules/**/*
+          - frontend/node_modules/**/*
   EOT
 
   # Environment variables

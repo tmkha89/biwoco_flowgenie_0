@@ -5,8 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'FrontEnd/**'
-      - '.github/workflows/frontend-deploy.yml'
+      - 'frontend/**'
+      - '.github/workflows/fronend-deploy.yml'
   workflow_dispatch:
     inputs:
       stage:
@@ -38,19 +38,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          # Cache npm dependencies - only cache if lock file exists
           cache: 'npm'
-          cache-dependency-path: FrontEnd/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
-        working-directory: ./FrontEnd
+        working-directory: ./frontend
         run: npm ci
 
       - name: Run frontend linting
-        working-directory: ./FrontEnd
+        working-directory: ./frontend
         run: npm run lint || echo "Linting failed but continuing..."
 
       - name: Build frontend
-        working-directory: ./FrontEnd
+        working-directory: ./frontend
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL || '' }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID || '' }}
