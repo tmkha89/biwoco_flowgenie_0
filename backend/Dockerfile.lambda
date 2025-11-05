@@ -10,8 +10,18 @@ COPY prisma ./prisma/
 RUN npm ci --production && \
     npx prisma generate
 
-# Copy built application
+# Copy built application from dist/ to Lambda task root
+# NestJS builds to dist/ with the same structure as src/
 COPY dist/ ./
+
+# Verify lambda.js exists
+RUN if [ ! -f lambda.js ]; then \
+      echo "ERROR: lambda.js not found. Contents of dist:"; \
+      ls -la . | head -20; \
+      find . -name "lambda.js" 2>/dev/null || echo "lambda.js not found anywhere"; \
+      exit 1; \
+    fi && \
+    echo "✅ lambda.js found successfully"
 
 # Set the CMD to your handler (Lambda runtime expects the handler path relative to LAMBDA_TASK_ROOT)
 CMD [ "lambda.handler" ]
