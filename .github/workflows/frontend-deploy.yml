@@ -125,15 +125,32 @@ jobs:
           echo "Creating deployment for app: $APP_ID, branch: $BRANCH_NAME"
           
           # Try to use start-job first (for apps connected to repository)
-          JOB_ID=$(aws amplify start-job \
+          JOB_OUTPUT=$(aws amplify start-job \
             --app-id "$APP_ID" \
             --branch-name "$BRANCH_NAME" \
             --job-type RELEASE \
             --query 'jobSummary.jobId' \
-            --output text 2>&1) || JOB_ID=""
+            --output text 2>&1)
+          JOB_EXIT_CODE=$?
           
-          if [[ "$JOB_ID" == *"BadRequestException"* ]] || [[ "$JOB_ID" == *"not connected to a repository"* ]]; then
-            echo "App not connected to repository, using deployment API instead..."
+          if [ $JOB_EXIT_CODE -eq 0 ] && [ -n "$JOB_OUTPUT" ] && [[ ! "$JOB_OUTPUT" =~ ^[[:space:]]*$ ]]; then
+            # Successfully started a job
+            JOB_ID="$JOB_OUTPUT"
+            echo "amplify_job_id=$JOB_ID" >> $GITHUB_OUTPUT
+            echo "deployment_type=job" >> $GITHUB_OUTPUT
+            echo "Started Amplify build job: $JOB_ID"
+          else
+            # Failed to start job - check if it's because app is not connected to repository
+            if [[ "$JOB_OUTPUT" == *"BadRequestException"* ]] || \
+               [[ "$JOB_OUTPUT" == *"not connected to a repository"* ]] || \
+               [[ "$JOB_OUTPUT" == *"Operation not supported"* ]]; then
+              echo "App not connected to repository, using deployment API instead..."
+            else
+              echo "Could not start job (exit code: $JOB_EXIT_CODE), using deployment API instead..."
+              echo "Error output: $JOB_OUTPUT"
+            fi
+            
+            # Use deployment API
             
             # Create a deployment
             DEPLOYMENT_RESPONSE=$(aws amplify create-deployment \
@@ -175,15 +192,6 @@ jobs:
             echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
             echo "deployment_type=deployment" >> $GITHUB_OUTPUT
             echo "Started deployment: $DEPLOYMENT_ID"
-            
-          elif [ -z "$JOB_ID" ] || [[ "$JOB_ID" == *"error"* ]]; then
-            echo "Failed to start build or deployment"
-            echo "Error: $JOB_ID"
-            exit 1
-          else
-            echo "amplify_job_id=$JOB_ID" >> $GITHUB_OUTPUT
-            echo "deployment_type=job" >> $GITHUB_OUTPUT
-            echo "Started Amplify build job: $JOB_ID"
           fi
 
       - name: Wait for Amplify Deployment to Complete
