@@ -272,23 +272,77 @@ jobs:
           # Copy built files
           cp -r dist/* lambda-package/
           
-          # Copy package.json and install production dependencies
+          # Copy package.json and install production dependencies only
           cp package.json package-lock.json lambda-package/
           cd lambda-package
-          npm ci --omit=dev --production
+          npm ci --omit=dev --production --no-audit --no-fund
           
-          # Copy Prisma generated client if exists
-          if [ -d "../node_modules/.prisma" ]; then
-            mkdir -p node_modules/.prisma
-            cp -r ../node_modules/.prisma/* node_modules/.prisma/
+          # Generate Prisma client in the package directory
+          if [ -f "../prisma/schema.prisma" ]; then
+            echo "Generating Prisma client..."
+            cp -r ../prisma ./
+            npx prisma generate --schema=./prisma/schema.prisma
+            rm -rf prisma
           fi
           
-          # Create zip file
-          cd ..
-          zip -r lambda-api.zip lambda-package/ -x "*.git*" "*.md" "*.test.*"
+          # Remove unnecessary files to reduce package size
+          echo "Removing unnecessary files to reduce package size..."
+          find node_modules -type d -name "__tests__" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type f -name "*.test.js" -delete 2>/dev/null || true
+          find node_modules -type f -name "*.spec.js" -delete 2>/dev/null || true
+          find node_modules -type f -name "*.map" -delete 2>/dev/null || true
+          find node_modules -type f -name "*.md" -delete 2>/dev/null || true
+          find node_modules -type f -name "LICENSE" -delete 2>/dev/null || true
+          find node_modules -type f -name "CHANGELOG*" -delete 2>/dev/null || true
+          find node_modules -type f -name "README*" -delete 2>/dev/null || true
           
-          ZIP_SIZE=$(ls -lh lambda-api.zip | awk '{print $5}')
-          echo "Lambda package created successfully (size: $ZIP_SIZE)"
+          # Keep only the Linux query engine for Prisma (Lambda runs on Linux)
+          if [ -d "node_modules/.prisma/client" ]; then
+            echo "Optimizing Prisma query engines..."
+            # Remove all query engines except Linux
+            find node_modules/.prisma/client -name "query_engine-*" ! -name "query_engine-linux*" -delete 2>/dev/null || true
+            find node_modules/.prisma/client -name "libquery_engine-*" ! -name "libquery_engine-linux*" -delete 2>/dev/null || true
+            find node_modules/.prisma/client -name "schema-engine-*" ! -name "schema-engine-linux*" -delete 2>/dev/null || true
+          fi
+          
+          # Remove Prisma CLI (not needed in Lambda)
+          rm -rf node_modules/prisma 2>/dev/null || true
+          
+          cd ..
+          
+          # Create zip file with maximum compression
+          echo "Creating compressed zip file..."
+          zip -r -9 lambda-api.zip lambda-package/ \
+            -x "*.git*" \
+            -x "*.md" \
+            -x "*.test.*" \
+            -x "*.spec.*" \
+            -x "*/.git/*" \
+            -x "*/test/*" \
+            -x "*/tests/*" \
+            -x "*/__tests__/*" \
+            -x "*/node_modules/.cache/*"
+          
+          # Calculate zip size
+          ZIP_SIZE=$(du -h lambda-api.zip | cut -f1)
+          ZIP_SIZE_BYTES=$(wc -c < lambda-api.zip)
+          ZIP_SIZE_MB=$((ZIP_SIZE_BYTES / 1024 / 1024))
+          
+          echo "Lambda package created successfully"
+          echo "  Size: $ZIP_SIZE (${ZIP_SIZE_MB} MB / ${ZIP_SIZE_BYTES} bytes)"
+          
+          # Check if package is too large for direct upload (50MB limit)
+          MAX_SIZE=$((50 * 1024 * 1024))  # 50MB in bytes
+          if [ "$ZIP_SIZE_BYTES" -gt "$MAX_SIZE" ]; then
+            echo "⚠️  Package size (${ZIP_SIZE_MB} MB) exceeds 50MB direct upload limit"
+            echo "Will upload to S3 and use S3 reference instead"
+            echo "use_s3_upload=true" >> $GITHUB_ENV
+          else
+            echo "✅ Package size is within direct upload limit"
+            echo "use_s3_upload=false" >> $GITHUB_ENV
+          fi
 
       - name: Get Lambda function name
         id: get-lambda
@@ -296,6 +350,29 @@ jobs:
           FUNCTION_NAME="${{ env.STAGE }}-flowgenie-api"
           echo "lambda_function_name=$FUNCTION_NAME" >> $GITHUB_OUTPUT
           echo "Target Lambda function: $FUNCTION_NAME"
+
+      - name: Upload Lambda package to S3 (if needed)
+        if: env.use_s3_upload == 'true'
+        working-directory: ./backend
+        run: |
+          STAGE="${{ env.STAGE }}"
+          BUCKET_NAME="${STAGE}-flowgenie-lambda-packages"
+          S3_KEY="lambda-api-$(date +%s).zip"
+          
+          # Create S3 bucket if it doesn't exist
+          if ! aws s3 ls "s3://$BUCKET_NAME" 2>/dev/null; then
+            echo "Creating S3 bucket: $BUCKET_NAME"
+            aws s3 mb "s3://$BUCKET_NAME" --region ${{ env.AWS_REGION }}
+          fi
+          
+          # Upload to S3
+          echo "Uploading Lambda package to S3..."
+          aws s3 cp lambda-api.zip "s3://$BUCKET_NAME/$S3_KEY" --region ${{ env.AWS_REGION }}
+          
+          echo "S3 bucket: $BUCKET_NAME"
+          echo "S3 key: $S3_KEY"
+          echo "s3_bucket=$BUCKET_NAME" >> $GITHUB_ENV
+          echo "s3_key=$S3_KEY" >> $GITHUB_ENV
 
       - name: Update Lambda function code
         working-directory: ./backend
@@ -311,11 +388,21 @@ jobs:
             exit 1
           fi
           
-          # Update function code
-          aws lambda update-function-code \
-            --function-name "$FUNCTION_NAME" \
-            --zip-file fileb://lambda-api.zip \
-            --region ${{ env.AWS_REGION }}
+          # Update function code (direct upload or S3)
+          if [ "${{ env.use_s3_upload }}" == "true" ]; then
+            echo "Using S3 upload method..."
+            aws lambda update-function-code \
+              --function-name "$FUNCTION_NAME" \
+              --s3-bucket "${{ env.s3_bucket }}" \
+              --s3-key "${{ env.s3_key }}" \
+              --region ${{ env.AWS_REGION }}
+          else
+            echo "Using direct upload method..."
+            aws lambda update-function-code \
+              --function-name "$FUNCTION_NAME" \
+              --zip-file fileb://lambda-api.zip \
+              --region ${{ env.AWS_REGION }}
+          fi
           
           echo "Lambda function code updated successfully"
 
