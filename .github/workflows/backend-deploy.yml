@@ -27,43 +27,15 @@ env:
   PYTHON_VERSION: '3.12'
 
 jobs:
-  # Deploy Lambda Backend
-  deploy-lambda:
-    name: Deploy Lambda Backend
+  # Run Database Migrations
+  run-migrations:
+    name: Run Database Migrations
     runs-on: ubuntu-latest
     environment: ${{ inputs.stage || 'dev' }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: |
-          echo "Installing backend dependencies..."
-          npm ci
-          echo "Dependencies installed successfully"
-
-      - name: Build backend
-        working-directory: ./backend
-        env:
-          NODE_ENV: production
-        run: |
-          echo "Building backend application..."
-          npm run build
-          
-          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
-            echo "ERROR: Build completed but dist folder is empty or missing"
-            exit 1
-          fi
-          echo "Build completed successfully"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -261,18 +233,48 @@ jobs:
           
           echo "✅ Database migrations completed successfully"
 
-      - name: Build backend application
+  # Deploy Lambda Backend
+  deploy-lambda:
+    name: Deploy Lambda Backend
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || 'dev' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
         working-directory: ./backend
         run: |
-          echo "Building backend application..."
+          echo "Installing backend dependencies..."
           npm ci
+          echo "Dependencies installed successfully"
+
+      - name: Build backend
+        working-directory: ./backend
+        env:
+          NODE_ENV: production
+        run: |
+          echo "Building backend application..."
           npm run build
-          echo "✅ Backend application built successfully"
+          
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo "ERROR: Build completed but dist folder is empty or missing"
+            exit 1
+          fi
+          echo "Build completed successfully"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Configure AWS credentials for ECR
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -423,33 +425,25 @@ jobs:
           echo "Current Lambda environment variables:"
           echo "$CURRENT_ENV" | jq '.'
           
-          # Use database details from previous step if available, otherwise query
-          if [ -n "${{ steps.get-db.outputs.rds_endpoint }}" ]; then
-            RDS_ENDPOINT="${{ steps.get-db.outputs.rds_endpoint }}"
-            DB_NAME="${{ steps.get-db.outputs.db_name }}"
-            DB_USERNAME="${{ steps.get-db.outputs.db_username }}"
-            echo "Using database details from previous step"
-          else
-            # Get database connection details
-            DB_IDENTIFIER="${STAGE}-flowgenie-db"
-            RDS_ENDPOINT=$(aws rds describe-db-instances \
-              --db-instance-identifier "$DB_IDENTIFIER" \
-              --region ${{ env.AWS_REGION }} \
-              --query 'DBInstances[0].Endpoint.Address' \
-              --output text 2>/dev/null || echo "")
-            
-            DB_NAME=$(aws rds describe-db-instances \
-              --db-instance-identifier "$DB_IDENTIFIER" \
-              --region ${{ env.AWS_REGION }} \
-              --query 'DBInstances[0].DBName' \
-              --output text 2>/dev/null || echo "flowgenie_db")
-            
-            DB_USERNAME=$(aws rds describe-db-instances \
-              --db-instance-identifier "$DB_IDENTIFIER" \
-              --region ${{ env.AWS_REGION }} \
-              --query 'DBInstances[0].MasterUsername' \
-              --output text 2>/dev/null || echo "flowgenie_admin")
-          fi
+          # Get database connection details
+          DB_IDENTIFIER="${STAGE}-flowgenie-db"
+          RDS_ENDPOINT=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[0].Endpoint.Address' \
+            --output text 2>/dev/null || echo "")
+          
+          DB_NAME=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[0].DBName' \
+            --output text 2>/dev/null || echo "flowgenie_db")
+          
+          DB_USERNAME=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[0].MasterUsername' \
+            --output text 2>/dev/null || echo "flowgenie_admin")
           
           # Get Redis endpoint (if exists)
           REDIS_REPLICATION_GROUP="${STAGE}-flowgenie-redis"
@@ -590,15 +584,30 @@ jobs:
         run: |
           FUNCTION_NAME="${{ steps.get-lambda.outputs.lambda_function_name }}"
           
+          # Get database info for summary
+          DB_IDENTIFIER="${{ env.STAGE }}-flowgenie-db"
+          RDS_ENDPOINT=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[0].Endpoint.Address' \
+            --output text 2>/dev/null || echo "unknown")
+          
+          DB_NAME=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[0].DBName' \
+            --output text 2>/dev/null || echo "unknown")
+          
           echo "## Lambda Backend Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
           echo "**Function Name:** $FUNCTION_NAME" >> $GITHUB_STEP_SUMMARY
           echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Database:** ${{ steps.get-db.outputs.db_name }}@${{ steps.get-db.outputs.rds_endpoint }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Database:** ${DB_NAME}@${RDS_ENDPOINT}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Database migrations completed" >> $GITHUB_STEP_SUMMARY
           echo "✅ Lambda backend has been successfully deployed!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "ℹ️  Note: Database migrations run in a separate job (run-migrations)" >> $GITHUB_STEP_SUMMARY
 
   # Build and Deploy Worker to ECS
   # TEMPORARILY DISABLED
