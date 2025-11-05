@@ -125,9 +125,7 @@ jobs:
       - name: Run database migrations via ECS
         id: run-migrations
         env:
-          DB_PASSWORD_DEV: ${{ secrets.DB_PASSWORD_DEV }}
-          DB_PASSWORD_STAGING: ${{ secrets.DB_PASSWORD_STAGING }}
-          DB_PASSWORD_PROD: ${{ secrets.DB_PASSWORD_PROD }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           # Ensure jq is available
           if ! command -v jq &> /dev/null; then
@@ -136,18 +134,9 @@ jobs:
           fi
           STAGE="${{ env.STAGE }}"
           
-          # Get the correct password based on stage
-          echo "Retrieving database password for stage: $STAGE"
-          if [ "$STAGE" == "prod" ]; then
-            DB_PASSWORD="$DB_PASSWORD_PROD"
-            SECRET_NAME="DB_PASSWORD_PROD"
-          elif [ "$STAGE" == "staging" ]; then
-            DB_PASSWORD="$DB_PASSWORD_STAGING"
-            SECRET_NAME="DB_PASSWORD_STAGING"
-          else
-            DB_PASSWORD="$DB_PASSWORD_DEV"
-            SECRET_NAME="DB_PASSWORD_DEV"
-          fi
+          # Get database password from secret
+          echo "Retrieving database password..."
+          SECRET_NAME="DB_PASSWORD"
           
           # Verify password was retrieved successfully
           if [ -z "$DB_PASSWORD" ]; then
@@ -300,7 +289,7 @@ jobs:
           echo "  Password in URL: ${DB_PASSWORD:0:1}***${DB_PASSWORD: -1} (masked)"
           echo ""
           echo "⚠️  If authentication fails, verify:"
-          echo "  1. GitHub secret 'DB_PASSWORD_${STAGE^^}' matches the RDS master password"
+          echo "  1. GitHub secret 'DB_PASSWORD' matches the RDS master password"
           echo "  2. The RDS master username matches: ${{ steps.get-db.outputs.db_username }}"
           echo "  3. The password hasn't been changed in RDS after deployment"
           echo "  4. Special characters in password are properly escaped in the DATABASE_URL"
@@ -534,12 +523,6 @@ jobs:
           # Run ECS task with override command to run migrations
           echo "Starting migration task..."
           
-          # Verify DATABASE_URL is still available (should be, but double-check)
-          if [ -z "$DATABASE_URL" ]; then
-            echo "❌ ERROR: DATABASE_URL is empty, cannot proceed with migrations"
-            exit 1
-          fi
-          
           # Create migration overrides JSON using jq
           MIGRATION_OVERRIDES_JSON=$(jq -n \
             --arg container_name "worker" \
@@ -548,7 +531,7 @@ jobs:
             '{
               containerOverrides: [{
                 name: $container_name,
-                command: ["sh", "-c", "cd /app && echo \"Verifying DATABASE_URL for migrations...\" && if [ -z \"$DATABASE_URL\" ]; then echo \"❌ ERROR: DATABASE_URL is empty in container\"; exit 1; fi && echo \"DATABASE_URL length: ${#DATABASE_URL}\" && npx prisma migrate deploy"],
+                command: ["sh", "-c", "npx prisma migrate deploy"],
                 environment: [
                   {name: "DATABASE_URL", value: $db_url},
                   {name: "STAGE", value: $stage},
@@ -556,23 +539,6 @@ jobs:
                 ]
               }]
             }')
-          
-          # Verify the JSON was created successfully
-          if [ -z "$MIGRATION_OVERRIDES_JSON" ] || [ "$MIGRATION_OVERRIDES_JSON" == "null" ]; then
-            echo "❌ ERROR: Failed to create migration task overrides JSON"
-            exit 1
-          fi
-          
-          # Verify DATABASE_URL is in the JSON (masked for security)
-          if echo "$MIGRATION_OVERRIDES_JSON" | jq -e '.containerOverrides[0].environment[] | select(.name == "DATABASE_URL") | .value' > /dev/null 2>&1; then
-            MIGRATION_DB_URL=$(echo "$MIGRATION_OVERRIDES_JSON" | jq -r '.containerOverrides[0].environment[] | select(.name == "DATABASE_URL") | .value')
-            MIGRATION_DB_URL_MASKED=$(echo "$MIGRATION_DB_URL" | sed 's/:[^:@]*@/:***@/')
-            echo "✅ DATABASE_URL verified in migration task overrides: $MIGRATION_DB_URL_MASKED"
-          else
-            echo "❌ ERROR: DATABASE_URL not found in migration task overrides JSON"
-            exit 1
-          fi
-          echo ""
           
           TASK_ARN=$(aws ecs run-task \
             --cluster "$CLUSTER_NAME" \
