@@ -576,10 +576,14 @@ jobs:
             echo ""
             echo "Updating Lambda function environment variables..."
             
+            # Create proper JSON structure for --environment parameter
+            # Format: {"Variables": {...}}
+            ENVIRONMENT_JSON=$(echo "$UPDATED_ENV" | jq -c '{Variables: .}')
+            
             # Update Lambda function configuration
             aws lambda update-function-configuration \
               --function-name "$FUNCTION_NAME" \
-              --environment "Variables=${UPDATED_ENV_STR}" \
+              --environment "$ENVIRONMENT_JSON" \
               --region ${{ env.AWS_REGION }} > /dev/null
             
             echo "Waiting for Lambda function configuration update..."
