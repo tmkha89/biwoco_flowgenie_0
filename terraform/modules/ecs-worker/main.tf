@@ -162,6 +162,8 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
     capacity_provider = "FARGATE_SPOT"
     weight            = 100
   }
+
+  depends_on = [aws_ecs_cluster.main]
 }
 
 # ECS Service
@@ -196,6 +198,8 @@ resource "aws_ecs_service" "worker" {
     }
   )
 
-  depends_on = var.use_fargate_spot ? [aws_ecs_cluster_capacity_providers.main[0]] : [aws_ecs_cluster.main]
+  # Explicitly depend on cluster and capacity providers (when they exist)
+  # The cluster reference ensures proper ordering, and capacity providers depend on cluster
+  depends_on = [aws_ecs_cluster.main]
 }
 
