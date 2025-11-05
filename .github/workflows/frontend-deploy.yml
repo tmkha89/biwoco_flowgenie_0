@@ -196,55 +196,90 @@ jobs:
           
           echo "🔍 Checking if branch '$BRANCH_NAME' exists in Amplify app..."
           
-          # Check if branch exists
+          # Check if branch exists - suppress error output to handle gracefully
+          set +e
           BRANCH_CHECK=$(aws amplify get-branch \
             --app-id "$APP_ID" \
             --branch-name "$BRANCH_NAME" \
             --query 'branch.branchName' \
-            --output text 2>&1)
+            --output text 2>/dev/null)
           BRANCH_CHECK_EXIT_CODE=$?
+          set -e
           
+          # Check if branch exists (exit code 0 and output matches branch name)
           if [ $BRANCH_CHECK_EXIT_CODE -eq 0 ] && [ "$BRANCH_CHECK" == "$BRANCH_NAME" ]; then
             echo "✅ Branch '$BRANCH_NAME' already exists in Amplify app"
             echo "branch_exists=true" >> $GITHUB_OUTPUT
           else
-            echo "⚠️  Branch '$BRANCH_NAME' does not exist in Amplify app"
+            # Check if error is because branch doesn't exist (expected case)
+            if [ $BRANCH_CHECK_EXIT_CODE -ne 0 ]; then
+              # Get the actual error message to check if it's "not found"
+              BRANCH_ERROR=$(aws amplify get-branch \
+                --app-id "$APP_ID" \
+                --branch-name "$BRANCH_NAME" \
+                --query 'branch.branchName' \
+                --output text 2>&1 || true)
+              
+              # Check if it's a "not found" error (expected) vs other errors
+              if [[ "$BRANCH_ERROR" == *"NotFoundException"* ]] || \
+                 [[ "$BRANCH_ERROR" == *"not found"* ]] || \
+                 [[ "$BRANCH_ERROR" == *"does not exist"* ]]; then
+                echo "ℹ️  Branch '$BRANCH_NAME' does not exist (this is expected if first deployment)"
+              else
+                echo ""
+                echo "⚠️  WARNING: Could not check branch status. Error: $BRANCH_ERROR"
+                echo "Attempting to create branch anyway..."
+              fi
+            else
+              echo "⚠️  Branch check returned unexpected result: $BRANCH_CHECK"
+              echo "Attempting to create branch anyway..."
+            fi
+            
             echo "Creating branch '$BRANCH_NAME'..."
             
             # Create the branch
+            set +e
             CREATE_BRANCH_RESPONSE=$(aws amplify create-branch \
               --app-id "$APP_ID" \
               --branch-name "$BRANCH_NAME" \
               --enable-auto-build \
               --output json 2>&1)
             CREATE_BRANCH_EXIT_CODE=$?
+            set -e
             
             if [ $CREATE_BRANCH_EXIT_CODE -ne 0 ]; then
-              echo ""
-              echo "❌ ERROR: Failed to create branch '$BRANCH_NAME'"
-              echo "Exit code: $CREATE_BRANCH_EXIT_CODE"
-              echo "AWS CLI Error: $CREATE_BRANCH_RESPONSE"
-              echo ""
-              echo "Possible causes:"
-              echo "  1. AWS credentials don't have permission to create branches"
-              echo "  2. Branch name conflict (unlikely if check failed)"
-              echo "  3. Invalid app ID"
-              echo ""
-              echo "Fix: Ensure AWS credentials have 'amplify:CreateBranch' permission"
-              exit 1
-            fi
-            
-            CREATED_BRANCH=$(echo "$CREATE_BRANCH_RESPONSE" | jq -r '.branch.branchName' 2>/dev/null)
-            if [ "$CREATED_BRANCH" == "$BRANCH_NAME" ]; then
-              echo "✅ Successfully created branch '$BRANCH_NAME'"
-              echo "branch_exists=false" >> $GITHUB_OUTPUT
+              # Check if branch already exists (race condition or was created between check and create)
+              if [[ "$CREATE_BRANCH_RESPONSE" == *"AlreadyExistsException"* ]] || \
+                 [[ "$CREATE_BRANCH_RESPONSE" == *"already exists"* ]]; then
+                echo "✅ Branch '$BRANCH_NAME' already exists (created by another process)"
+                echo "branch_exists=true" >> $GITHUB_OUTPUT
+              else
+                echo ""
+                echo "❌ ERROR: Failed to create branch '$BRANCH_NAME'"
+                echo "Exit code: $CREATE_BRANCH_EXIT_CODE"
+                echo "AWS CLI Error: $CREATE_BRANCH_RESPONSE"
+                echo ""
+                echo "Possible causes:"
+                echo "  1. AWS credentials don't have permission to create branches (amplify:CreateBranch)"
+                echo "  2. Invalid app ID"
+                echo "  3. Network connectivity issues"
+                echo ""
+                echo "Fix: Ensure AWS credentials have 'amplify:CreateBranch' permission"
+                exit 1
+              fi
             else
-              echo ""
-              echo "❌ ERROR: Branch creation response unexpected"
-              echo "Expected: $BRANCH_NAME"
-              echo "Received: $CREATED_BRANCH"
-              echo "Full response: $CREATE_BRANCH_RESPONSE"
-              exit 1
+              CREATED_BRANCH=$(echo "$CREATE_BRANCH_RESPONSE" | jq -r '.branch.branchName' 2>/dev/null)
+              if [ "$CREATED_BRANCH" == "$BRANCH_NAME" ]; then
+                echo "✅ Successfully created branch '$BRANCH_NAME'"
+                echo "branch_exists=false" >> $GITHUB_OUTPUT
+              else
+                echo ""
+                echo "❌ ERROR: Branch creation response unexpected"
+                echo "Expected: $BRANCH_NAME"
+                echo "Received: $CREATED_BRANCH"
+                echo "Full response: $CREATE_BRANCH_RESPONSE"
+                exit 1
+              fi
             fi
           fi
 
