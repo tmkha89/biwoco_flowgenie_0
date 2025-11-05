@@ -4,21 +4,6 @@ output "amplify_app_id" {
   value       = module.amplify.app_id
 }
 
-output "amplify_arn" {
-  description = "Amplify App ARN"
-  value       = module.amplify.app_arn
-}
-
-output "amplify_app_url" {
-  description = "Amplify App URL"
-  value       = module.amplify.app_url
-}
-
-output "amplify_domain_url" {
-  description = "Amplify Domain URL (if custom domain is configured)"
-  value       = module.amplify.domain_url
-}
-
 # API Gateway Outputs
 output "api_gateway_url" {
   description = "API Gateway endpoint URL"
