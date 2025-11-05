@@ -440,7 +440,6 @@ jobs:
           AMPLIFY_BRANCH_NAME: ${{ vars.AMPLIFY_BRANCH_NAME }}
           AMPLIFY_DOMAIN: ${{ vars.AMPLIFY_DOMAIN }}
           AMPLIFY_REPOSITORY_URL: ${{ vars.AMPLIFY_REPOSITORY_URL }}
-          AWS_REGION_VAR: ${{ vars.AWS_REGION }}
           BACKEND_ENVIRONMENT_VARIABLES: ${{ vars.BACKEND_ENVIRONMENT_VARIABLES }}
           DB_NAME: ${{ vars.DB_NAME }}
           DB_USERNAME: ${{ vars.DB_USERNAME }}
@@ -500,11 +499,11 @@ jobs:
           )
           
           # List of all variables to inject (from GitHub Variables)
+          # Note: AWS_REGION is excluded as it's a reserved Lambda environment variable
           VARIABLES=(
             "AMPLIFY_BRANCH_NAME"
             "AMPLIFY_DOMAIN"
             "AMPLIFY_REPOSITORY_URL"
-            "AWS_REGION"
             "BACKEND_ENVIRONMENT_VARIABLES"
             "DB_NAME"
             "DB_USERNAME"
@@ -539,11 +538,9 @@ jobs:
           echo ""
           echo "📝 Injecting variables from GitHub Variables..."
           for var_name in "${VARIABLES[@]}"; do
-            # Handle special case: AWS_REGION_VAR -> AWS_REGION, STAGE_VAR -> STAGE
+            # Handle special case: STAGE_VAR -> STAGE
             env_var_name="$var_name"
-            if [ "$var_name" = "AWS_REGION" ]; then
-              env_var_name="AWS_REGION_VAR"
-            elif [ "$var_name" = "STAGE" ]; then
+            if [ "$var_name" = "STAGE" ]; then
               env_var_name="STAGE_VAR"
             fi
             
@@ -567,6 +564,42 @@ jobs:
             echo "  Setting NODE_ENV=$NODE_ENV_VALUE"
             UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg env "$NODE_ENV_VALUE" '. + {NODE_ENV: $env}')
           fi
+          
+          # Filter out reserved Lambda environment variables that cannot be modified
+          echo ""
+          echo "🔍 Filtering out reserved Lambda environment variables..."
+          RESERVED_KEYS=(
+            "AWS_LAMBDA_EXEC_WRAPPER"
+            "AWS_EXECUTION_ENV"
+            "AWS_LAMBDA_FUNCTION_NAME"
+            "AWS_LAMBDA_FUNCTION_VERSION"
+            "AWS_LAMBDA_FUNCTION_MEMORY_SIZE"
+            "AWS_LAMBDA_LOG_GROUP_NAME"
+            "AWS_LAMBDA_LOG_STREAM_NAME"
+            "AWS_LAMBDA_RUNTIME_API"
+            "AWS_REGION"
+            "AWS_DEFAULT_REGION"
+            "_AWS_XRAY_TRACING_NAME"
+            "_X_AMZN_TRACE_ID"
+            "LAMBDA_TASK_ROOT"
+            "LAMBDA_RUNTIME_DIR"
+            "_HANDLER"
+            "PATH"
+            "LD_LIBRARY_PATH"
+            "TZ"
+            "LANG"
+          )
+          
+          # Remove reserved keys from UPDATED_ENV
+          FILTERED_ENV=$(echo "$UPDATED_ENV" | jq -c '.')
+          for reserved_key in "${RESERVED_KEYS[@]}"; do
+            if echo "$FILTERED_ENV" | jq -e "has(\"$reserved_key\")" > /dev/null; then
+              echo "  ⚠️  Removing reserved key: $reserved_key"
+              FILTERED_ENV=$(echo "$FILTERED_ENV" | jq -c "del(.\"$reserved_key\")")
+            fi
+          done
+          
+          UPDATED_ENV="$FILTERED_ENV"
           
           # Check if update is needed
           CURRENT_ENV_STR=$(echo "$CURRENT_ENV" | jq -c -S '.')
