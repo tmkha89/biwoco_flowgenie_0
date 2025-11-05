@@ -238,7 +238,6 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           REDIS_URL: ${{ secrets.REDIS_URL }}
-          REDIS_AUTH_TOKEN: ${{ secrets.REDIS_AUTH_TOKEN }}
           REDIS_HOST: ${{ secrets.REDIS_HOST }}
           REDIS_PORT: ${{ secrets.REDIS_PORT }}
           # Variables from GitHub Variables
@@ -372,6 +371,7 @@ jobs:
           
           # Create update configuration JSON
           # Note: update-service expects SourceConfiguration at the top level, not nested
+          # Port must be a string, not a number
           UPDATE_CONFIG=$(jq -n \
             --arg image_uri "$IMAGE_URI" \
             --arg access_role_arn "$ACCESS_ROLE_ARN" \
@@ -381,7 +381,7 @@ jobs:
               "ImageRepository": {
                 "ImageIdentifier": $image_uri,
                 "ImageConfiguration": {
-                  "Port": ($port | tonumber),
+                  "Port": $port,
                   "RuntimeEnvironmentVariables": $env_vars
                 },
                 "ImageRepositoryType": "ECR"
