@@ -26,6 +26,12 @@ resource "aws_ecr_repository" "backend" {
 # Local value to get the ECR repository URL
 locals {
   ecr_repository_url = var.use_existing_ecr ? data.aws_ecr_repository.existing[0].repository_url : aws_ecr_repository.backend[0].repository_url
+  
+  # Generate VPC connector name (must be 4-40 characters)
+  # Shorten service name by replacing "apprunner" with "ar" if present
+  vpc_connector_name_base = var.service_name != "" ? replace(var.service_name, "apprunner", "ar") : "${var.stage}-flowgenie"
+  # Ensure it fits within 40 chars (leave room for "-vpc" suffix)
+  vpc_connector_name = length("${local.vpc_connector_name_base}-vpc") > 40 ? "${substr(local.vpc_connector_name_base, 0, 36)}-vpc" : "${local.vpc_connector_name_base}-vpc"
 }
 
 # IAM Role for App Runner to access ECR
@@ -131,8 +137,9 @@ resource "aws_apprunner_service" "backend" {
 }
 
 # VPC Connector for App Runner (allows access to RDS and Redis)
+# VPC connector name must be 4-40 characters
 resource "aws_apprunner_vpc_connector" "main" {
-  vpc_connector_name = var.service_name != "" ? "${var.service_name}-vpc-connector" : "${var.stage}-flowgenie-vpc-connector"
+  vpc_connector_name = local.vpc_connector_name
   subnets            = var.subnet_ids
   security_groups    = var.security_group_ids
 
