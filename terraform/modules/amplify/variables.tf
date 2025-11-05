@@ -38,3 +38,8 @@ variable "tags" {
   default     = {}
 }
 
+variable "devops_token" {
+  description = "Token for access github"
+  type        = string
+  default     = ""
+}
