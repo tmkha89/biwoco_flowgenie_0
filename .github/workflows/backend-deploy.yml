@@ -32,6 +32,7 @@ jobs:
     name: Run Database Migrations
     runs-on: ubuntu-latest
     environment: ${{ inputs.stage || 'dev' }}
+    if: false  # Temporarily disabled
     
     steps:
       - name: Checkout code

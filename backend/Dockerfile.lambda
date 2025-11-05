@@ -49,9 +49,7 @@ RUN if [ ! -f lambda.js ]; then \
       exit 1; \
     fi && \
     echo "✅ Verification complete: All required files found in correct locations" && \
-    echo "  - lambda.js: $(ls -lh lambda.js | awk '{print $9, $5}')" && \
-    echo "  - app.module.js: $(ls -lh app.module.js | awk '{print $9, $5}')" && \
-    echo "  - database/database.module.js: $(ls -lh database/database.module.js | awk '{print $9, $5}')"
+    ls -lh lambda.js app.module.js database/database.module.js 2>/dev/null || true
 
 # Set the CMD to your handler (Lambda runtime expects the handler path relative to LAMBDA_TASK_ROOT)
 CMD [ "lambda.handler" ]
