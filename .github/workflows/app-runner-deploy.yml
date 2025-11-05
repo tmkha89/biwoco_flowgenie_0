@@ -317,26 +317,25 @@ jobs:
           PORT=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.ImageRepository.ImageConfiguration.Port // 3000')
           
           # Create update configuration JSON
+          # Note: update-service expects SourceConfiguration at the top level, not nested
           UPDATE_CONFIG=$(jq -n \
             --arg image_uri "$IMAGE_URI" \
             --arg access_role_arn "$ACCESS_ROLE_ARN" \
             --arg port "$PORT" \
             --argjson env_vars "$UPDATED_ENV" \
             '{
-              "SourceConfiguration": {
-                "ImageRepository": {
-                  "ImageIdentifier": $image_uri,
-                  "ImageConfiguration": {
-                    "Port": ($port | tonumber),
-                    "RuntimeEnvironmentVariables": $env_vars
-                  },
-                  "ImageRepositoryType": "ECR"
+              "ImageRepository": {
+                "ImageIdentifier": $image_uri,
+                "ImageConfiguration": {
+                  "Port": ($port | tonumber),
+                  "RuntimeEnvironmentVariables": $env_vars
                 },
-                "AuthenticationConfiguration": {
-                  "AccessRoleArn": $access_role_arn
-                },
-                "AutoDeploymentsEnabled": true
-              }
+                "ImageRepositoryType": "ECR"
+              },
+              "AuthenticationConfiguration": {
+                "AccessRoleArn": $access_role_arn
+              },
+              "AutoDeploymentsEnabled": true
             }')
           
           # Check if update is needed
@@ -352,6 +351,7 @@ jobs:
             echo "$UPDATE_CONFIG" > "$UPDATE_CONFIG_FILE"
             
             # Update App Runner service
+            # Note: --source-configuration expects JSON with ImageRepository/AuthenticationConfiguration at root
             aws apprunner update-service \
               --service-arn "$SERVICE_ARN" \
               --source-configuration "file://$UPDATE_CONFIG_FILE" \
