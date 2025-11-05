@@ -18,7 +18,7 @@ env:
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
   STAGE: ${{ inputs.stage || vars.STAGE || 'dev' }}
-  db_name: ${{ vars.DB_RNAME }}
+  db_name: ${{ vars.DB_NAME }}
   db_username: ${{ vars.DB_USERNAME }}
   db_password: ${{ secrets.DB_PASSWORD }}
   amplify_repository_url: ${{ vars.AMPLIFY_REPOSITORY_URL }}
@@ -66,7 +66,7 @@ jobs:
           terraform plan \
             -var="stage=${{ env.STAGE }}" \
             -var="aws_region=${{ env.AWS_REGION }}" \
-            -var="db_NAME=${{ env.db_name }}" \
+            -var="db_name=${{ env.db_name }}" \
             -var="db_username=${{ env.db_username }}" \
             -var="db_password=${{ env.db_password }}" \
             -var="amplify_repository_url=${{ env.amplify_repository_url }}" \
