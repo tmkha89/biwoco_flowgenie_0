@@ -59,27 +59,90 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: |
+          echo "📦 Installing frontend dependencies..."
+          if ! npm ci; then
+            echo ""
+            echo "❌ ERROR: Failed to install frontend dependencies"
+            echo ""
+            echo "This usually means package.json and package-lock.json are out of sync."
+            echo "Fix: Run 'npm install' in the frontend directory and commit the updated package-lock.json"
+            exit 1
+          fi
+          echo "✅ Dependencies installed successfully"
 
       - name: Run frontend linting
         working-directory: ./frontend
-        run: npm run lint || echo "Linting failed but continuing..."
+        run: |
+          echo "🔍 Running linting checks..."
+          if ! npm run lint; then
+            echo ""
+            echo "⚠️  WARNING: Linting failed, but continuing with deployment..."
+            echo "Please fix linting errors before the next deployment"
+          else
+            echo "✅ Linting passed"
+          fi
 
       - name: Build frontend
         working-directory: ./frontend
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL || '' }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID || '' }}
-        run: npm run build
+        run: |
+          echo "🏗️  Building frontend application..."
+          if ! npm run build; then
+            echo ""
+            echo "❌ ERROR: Frontend build failed"
+            echo ""
+            echo "Common issues:"
+            echo "  - Missing environment variables (VITE_API_URL, VITE_GOOGLE_CLIENT_ID)"
+            echo "  - TypeScript compilation errors"
+            echo "  - Import path errors"
+            echo "  - Missing dependencies"
+            exit 1
+          fi
+          
+          # Verify dist folder was created
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo ""
+            echo "❌ ERROR: Build completed but dist folder is empty or missing"
+            exit 1
+          fi
+          echo "✅ Build completed successfully"
 
       - name: Prepare deployment artifacts
         working-directory: ./frontend
         run: |
-          # Create a zip file of the dist folder for deployment
+          echo "📦 Preparing deployment artifacts..."
+          
+          if [ ! -d "dist" ]; then
+            echo ""
+            echo "❌ ERROR: dist folder not found. Build must have failed."
+            exit 1
+          fi
+          
+          if [ -z "$(ls -A dist)" ]; then
+            echo ""
+            echo "❌ ERROR: dist folder is empty. Build did not produce any output."
+            exit 1
+          fi
+          
           cd dist
-          zip -r ../deployment.zip .
+          if ! zip -r ../deployment.zip .; then
+            echo ""
+            echo "❌ ERROR: Failed to create deployment zip file"
+            exit 1
+          fi
           cd ..
-          echo "Deployment zip created: $(ls -lh deployment.zip)"
+          
+          if [ ! -f "deployment.zip" ]; then
+            echo ""
+            echo "❌ ERROR: deployment.zip was not created"
+            exit 1
+          fi
+          
+          ZIP_SIZE=$(ls -lh deployment.zip | awk '{print $5}')
+          echo "✅ Deployment zip created successfully (size: $ZIP_SIZE)"
 
       - name: Install jq for JSON parsing
         run: sudo apt-get update && sudo apt-get install -y jq
@@ -94,18 +157,28 @@ jobs:
       - name: Get Amplify App ID
         id: get-amplify-app
         run: |
-          # Try to get Amplify App ID from Terraform outputs
+          echo "🔍 Looking for Amplify app: ${STAGE}-flowgenie-frontend"
+          
           APP_ID=$(aws amplify list-apps \
             --query "apps[?name=='${STAGE}-flowgenie-frontend'].appId" \
             --output text 2>/dev/null || echo "")
           
           if [ -z "$APP_ID" ]; then
-            echo "Amplify app not found. Please ensure the Amplify app is created via Terraform first."
+            echo ""
+            echo "❌ ERROR: Amplify app '${STAGE}-flowgenie-frontend' not found"
+            echo ""
+            echo "Possible causes:"
+            echo "  1. Amplify app was not created via Terraform"
+            echo "  2. App name mismatch (expected: ${STAGE}-flowgenie-frontend)"
+            echo "  3. AWS credentials don't have permission to list Amplify apps"
+            echo ""
+            echo "Available apps:"
+            aws amplify list-apps --query "apps[*].[name,appId]" --output table 2>&1 || echo "  (Failed to list apps - check AWS credentials)"
             exit 1
           fi
           
           echo "amplify_app_id=$APP_ID" >> $GITHUB_OUTPUT
-          echo "Found Amplify App ID: $APP_ID"
+          echo "✅ Found Amplify App ID: $APP_ID"
 
       - name: Get Amplify Branch Name
         id: get-branch
@@ -119,6 +192,7 @@ jobs:
         id: start-deployment
         working-directory: ./frontend
         run: |
+          set +e  # Don't exit on error, we'll handle them manually
           APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
           BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
           
@@ -151,43 +225,85 @@ jobs:
             fi
             
             # Use deployment API
-            
-            # Create a deployment
+            echo "Creating deployment..."
             DEPLOYMENT_RESPONSE=$(aws amplify create-deployment \
               --app-id "$APP_ID" \
               --branch-name "$BRANCH_NAME" \
-              --output json)
-            
-            DEPLOYMENT_ID=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.jobSummary.jobId')
-            ZIP_UPLOAD_URL=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.zipUploadUrl')
-            
-            if [ -z "$DEPLOYMENT_ID" ] || [ "$DEPLOYMENT_ID" == "null" ]; then
-              echo "Failed to create deployment"
-              echo "Response: $DEPLOYMENT_RESPONSE"
-              exit 1
-            fi
-            
-            echo "Deployment ID: $DEPLOYMENT_ID"
-            echo "Uploading artifacts to: $ZIP_UPLOAD_URL"
-            
-            # Upload the zip file
-            curl -X PUT "$ZIP_UPLOAD_URL" \
-              --upload-file deployment.zip \
-              --header "Content-Type: application/zip"
-            
-            if [ $? -ne 0 ]; then
-              echo "Failed to upload deployment artifacts"
-              exit 1
-            fi
-            
-            echo "Artifacts uploaded successfully"
-            
-            # Start the deployment
-            START_RESPONSE=$(aws amplify start-deployment \
-              --app-id "$APP_ID" \
-              --branch-name "$BRANCH_NAME" \
-              --job-id "$DEPLOYMENT_ID" \
-              --output json)
+                             --output json 2>&1)
+             DEPLOYMENT_EXIT_CODE=$?
+             
+             if [ $DEPLOYMENT_EXIT_CODE -ne 0 ]; then
+               echo ""
+               echo "❌ ERROR: Failed to create deployment"
+                echo "Exit code: $DEPLOYMENT_EXIT_CODE"
+                echo "AWS CLI Error: $DEPLOYMENT_RESPONSE"
+                echo ""
+                echo "Possible causes:"
+                echo "  1. Invalid app ID or branch name"
+                echo "  2. AWS credentials don't have Amplify permissions"
+                echo "  3. Branch '${BRANCH_NAME}' doesn't exist in Amplify app"
+                exit 1
+              fi
+              
+              DEPLOYMENT_ID=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.jobSummary.jobId' 2>/dev/null)
+              ZIP_UPLOAD_URL=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.zipUploadUrl' 2>/dev/null)
+              
+              if [ $? -ne 0 ] || [ -z "$DEPLOYMENT_ID" ] || [ "$DEPLOYMENT_ID" == "null" ]; then
+                echo ""
+                echo "❌ ERROR: Failed to parse deployment response"
+                echo "DEPLOYMENT_ID: $DEPLOYMENT_ID"
+                echo "ZIP_UPLOAD_URL: $ZIP_UPLOAD_URL"
+                echo "Full response: $DEPLOYMENT_RESPONSE"
+                exit 1
+              fi
+              
+              echo "✅ Deployment ID: $DEPLOYMENT_ID"
+              echo "📤 Uploading artifacts..."
+              
+              if [ ! -f deployment.zip ]; then
+                echo ""
+                echo "❌ ERROR: deployment.zip not found!"
+                echo "Current directory: $(pwd)"
+                ls -la
+                exit 1
+              fi
+              
+              UPLOAD_OUTPUT=$(curl -X PUT "$ZIP_UPLOAD_URL" \
+                --upload-file deployment.zip \
+                --header "Content-Type: application/zip" \
+                --write-out "\nHTTP_CODE:%{http_code}" \
+                --silent \
+                --show-error \
+                2>&1)
+              UPLOAD_EXIT_CODE=$?
+              HTTP_CODE=$(echo "$UPLOAD_OUTPUT" | grep "HTTP_CODE" | cut -d: -f2 || echo "N/A")
+              
+              if [ $UPLOAD_EXIT_CODE -ne 0 ] || [ "$HTTP_CODE" != "200" ]; then
+                echo ""
+                echo "❌ ERROR: Failed to upload deployment artifacts"
+                echo "Exit code: $UPLOAD_EXIT_CODE"
+                echo "HTTP code: $HTTP_CODE"
+                echo "Possible causes: Upload URL expired, network issues, or file too large"
+                exit 1
+              fi
+              
+              echo "✅ Artifacts uploaded successfully"
+              
+              echo "🚀 Starting deployment..."
+              START_RESPONSE=$(aws amplify start-deployment \
+                --app-id "$APP_ID" \
+                --branch-name "$BRANCH_NAME" \
+                --job-id "$DEPLOYMENT_ID" \
+                --output json 2>&1)
+              START_EXIT_CODE=$?
+              
+              if [ $START_EXIT_CODE -ne 0 ]; then
+                echo ""
+                echo "❌ ERROR: Failed to start deployment"
+                echo "Exit code: $START_EXIT_CODE"
+                echo "Error: $START_RESPONSE"
+                exit 1
+              fi
             
             echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
             echo "deployment_type=deployment" >> $GITHUB_OUTPUT
@@ -214,34 +330,40 @@ jobs:
                 --branch-name "$BRANCH_NAME" \
                 --job-id "$DEPLOYMENT_ID" \
                 --query 'job.summary.status' \
-                --output text 2>/dev/null || echo "PENDING")
-              
-              echo "Deployment status: $STATUS (Elapsed: ${ELAPSED}s)"
-              
-              if [ "$STATUS" = "SUCCEED" ]; then
-                echo "Deployment completed successfully!"
-                exit 0
-              elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
-                echo "Deployment failed with status: $STATUS"
+                                --output text 2>/dev/null || echo "PENDING")
                 
-                # Get deployment logs
-                echo "Fetching deployment logs..."
-                aws amplify get-job \
-                  --app-id "$APP_ID" \
-                  --branch-name "$BRANCH_NAME" \
-                  --job-id "$DEPLOYMENT_ID" \
-                  --query 'job.steps[*].[stepName,status,logUrl]' \
-                  --output table || true
+                echo "Deployment status: $STATUS (Elapsed: ${ELAPSED}s)"
                 
-                exit 1
-              fi
+                if [ "$STATUS" = "SUCCEED" ]; then
+                  echo "✅ Deployment completed successfully!"
+                  exit 0
+                elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
+                  echo ""
+                  echo "❌ ERROR: Deployment failed with status: $STATUS"
+                  echo ""
+                  echo "📋 Fetching deployment logs..."
+                  aws amplify get-job \
+                    --app-id "$APP_ID" \
+                    --branch-name "$BRANCH_NAME" \
+                    --job-id "$DEPLOYMENT_ID" \
+                    --query 'job.steps[*].[stepName,status,logUrl]' \
+                    --output table || true
+                  echo ""
+                  echo "🔗 View logs: https://console.aws.amazon.com/amplify/home?region=${AWS_REGION}#/${APP_ID}/${BRANCH_NAME}/${DEPLOYMENT_ID}"
+                  exit 1
+                fi
               
-              sleep $SLEEP_INTERVAL
-              ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
-            done
-            
-            echo "Deployment timeout after ${MAX_WAIT} seconds"
-            exit 1
+                              sleep $SLEEP_INTERVAL
+                ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
+              done
+              
+              echo ""
+              echo "❌ ERROR: Deployment timeout after ${MAX_WAIT} seconds (30 minutes)"
+              echo ""
+              echo "The deployment is still running but exceeded the timeout limit."
+              echo "Check the deployment status in AWS Console:"
+              echo "   https://console.aws.amazon.com/amplify/home?region=${AWS_REGION}#/${APP_ID}/${BRANCH_NAME}"
+              exit 1
           else
             # Original job-based wait logic
             JOB_ID=${{ steps.start-deployment.outputs.amplify_job_id }}
@@ -257,34 +379,40 @@ jobs:
                 --branch-name "$BRANCH_NAME" \
                 --job-id "$JOB_ID" \
                 --query 'job.summary.status' \
-                --output text)
-              
-              echo "Build status: $STATUS (Elapsed: ${ELAPSED}s)"
-              
-              if [ "$STATUS" = "SUCCEED" ]; then
-                echo "Build completed successfully!"
-                exit 0
-              elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
-                echo "Build failed with status: $STATUS"
+                                --output text)
                 
-                # Get build logs
-                echo "Fetching build logs..."
-                aws amplify get-job \
-                  --app-id "$APP_ID" \
-                  --branch-name "$BRANCH_NAME" \
-                  --job-id "$JOB_ID" \
-                  --query 'job.steps[*].[stepName,status,logUrl]' \
-                  --output table || true
+                echo "Build status: $STATUS (Elapsed: ${ELAPSED}s)"
                 
-                exit 1
-              fi
+                if [ "$STATUS" = "SUCCEED" ]; then
+                  echo "✅ Build completed successfully!"
+                  exit 0
+                elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
+                  echo ""
+                  echo "❌ ERROR: Build failed with status: $STATUS"
+                  echo ""
+                  echo "📋 Fetching build logs..."
+                  aws amplify get-job \
+                    --app-id "$APP_ID" \
+                    --branch-name "$BRANCH_NAME" \
+                    --job-id "$JOB_ID" \
+                    --query 'job.steps[*].[stepName,status,logUrl]' \
+                    --output table || true
+                  echo ""
+                  echo "🔗 View logs: https://console.aws.amazon.com/amplify/home?region=${AWS_REGION}#/${APP_ID}/${BRANCH_NAME}/${JOB_ID}"
+                  exit 1
+                fi
               
-              sleep $SLEEP_INTERVAL
-              ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
-            done
-            
-            echo "Build timeout after ${MAX_WAIT} seconds"
-            exit 1
+                              sleep $SLEEP_INTERVAL
+                ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
+              done
+              
+              echo ""
+              echo "❌ ERROR: Build timeout after ${MAX_WAIT} seconds (30 minutes)"
+              echo ""
+              echo "The build is still running but exceeded the timeout limit."
+              echo "Check the build status in AWS Console:"
+              echo "   https://console.aws.amazon.com/amplify/home?region=${AWS_REGION}#/${APP_ID}/${BRANCH_NAME}"
+              exit 1
           fi
 
       - name: Get Amplify App URL
@@ -311,3 +439,26 @@ jobs:
           echo "**App URL:** [${{ steps.get-url.outputs.amplify_app_url }}](${{ steps.get-url.outputs.amplify_app_url }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Frontend has been successfully deployed to AWS Amplify!" >> $GITHUB_STEP_SUMMARY
+
+      - name: Failure Summary
+        if: failure()
+        run: |
+          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Troubleshooting Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. **Check the logs above** for the specific error message" >> $GITHUB_STEP_SUMMARY
+          echo "2. **Verify AWS credentials** have necessary Amplify permissions" >> $GITHUB_STEP_SUMMARY
+          echo "3. **Check Amplify app configuration** in AWS Console" >> $GITHUB_STEP_SUMMARY
+          echo "4. **Verify environment variables** are set correctly" >> $GITHUB_STEP_SUMMARY
+          echo "5. **Review build logs** in AWS Amplify Console" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Useful Links:" >> $GITHUB_STEP_SUMMARY
+          echo "- [AWS Amplify Console](https://console.aws.amazon.com/amplify/home?region=${{ env.AWS_REGION }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Common Issues:" >> $GITHUB_STEP_SUMMARY
+          echo "- Build failures: Check TypeScript/compilation errors" >> $GITHUB_STEP_SUMMARY
+          echo "- Missing files: Verify all source files are committed" >> $GITHUB_STEP_SUMMARY
+          echo "- Permission errors: Verify IAM roles and policies" >> $GITHUB_STEP_SUMMARY
+          echo "- Timeout: Large deployments may need more time" >> $GITHUB_STEP_SUMMARY
