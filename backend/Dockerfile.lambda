@@ -103,7 +103,8 @@ RUN if [ ! -f main.js ]; then \
     echo "Files that will be available at runtime:" && \
     ls -la main.js 2>/dev/null || echo "ERROR: main.js not visible in final check"
 
-# Lambda Web Adapter will handle converting API Gateway requests to HTTP
-# The CMD runs the standard HTTP server (main.js)
+# Override the default Lambda entrypoint since we're using Lambda Web Adapter
+# Lambda Web Adapter will handle the request conversion, so we just run the server directly
+ENTRYPOINT []
 CMD ["node", "main.js"]
 
