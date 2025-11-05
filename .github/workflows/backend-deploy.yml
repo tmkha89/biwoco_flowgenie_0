@@ -420,11 +420,40 @@ jobs:
 
       - name: Update Lambda environment variables
         env:
+          # Secrets from GitHub Secrets
+          APP_URL: ${{ secrets.APP_URL }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_DYNAMODB: ${{ secrets.AWS_DYNAMODB }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          REDIS_AUTH_TOKEN: ${{ secrets.REDIS_AUTH_TOKEN }}
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          DEVOPS_TOKEN: ${{ secrets.DEVOPS_TOKEN }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          REDIS_AUTH_TOKEN: ${{ secrets.REDIS_AUTH_TOKEN }}
+          # Variables from GitHub Variables
+          AMPLIFY_BRANCH_NAME: ${{ vars.AMPLIFY_BRANCH_NAME }}
+          AMPLIFY_DOMAIN: ${{ vars.AMPLIFY_DOMAIN }}
+          AMPLIFY_REPOSITORY_URL: ${{ vars.AMPLIFY_REPOSITORY_URL }}
+          AWS_REGION_VAR: ${{ vars.AWS_REGION }}
+          BACKEND_ENVIRONMENT_VARIABLES: ${{ vars.BACKEND_ENVIRONMENT_VARIABLES }}
+          DB_NAME: ${{ vars.DB_NAME }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          ENABLE_SWAGGER: ${{ vars.ENABLE_SWAGGER }}
+          FRONTEND_ENVIRONMENT_VARIABLES: ${{ vars.FRONTEND_ENVIRONMENT_VARIABLES }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          GOOGLE_PROJECT_NAME: ${{ vars.GOOGLE_PROJECT_NAME }}
           GOOGLE_REDIRECT_URI: ${{ vars.GOOGLE_REDIRECT_URI }}
+          JWT_EXPIRES_IN: ${{ vars.JWT_EXPIRES_IN }}
+          REDIS_HOST: ${{ vars.REDIS_HOST }}
+          REDIS_PORT: ${{ vars.REDIS_PORT }}
+          REFRESH_TOKEN_EXPIRES_IN: ${{ vars.REFRESH_TOKEN_EXPIRES_IN }}
+          STAGE_VAR: ${{ vars.STAGE }}
         run: |
           FUNCTION_NAME="${{ steps.get-lambda.outputs.lambda_function_name }}"
           STAGE="${{ env.STAGE }}"
@@ -435,7 +464,7 @@ jobs:
             sudo apt-get update && sudo apt-get install -y jq
           fi
           
-          echo "Updating Lambda environment variables..."
+          echo "Updating Lambda environment variables from GitHub Secrets and Variables..."
           
           # Get current Lambda function configuration
           LAMBDA_CONFIG=$(aws lambda get-function-configuration \
@@ -448,163 +477,95 @@ jobs:
           echo "Current Lambda environment variables:"
           echo "$CURRENT_ENV" | jq '.'
           
-          # Get database connection details
-          DB_IDENTIFIER="${STAGE}-flowgenie-db"
-          RDS_ENDPOINT=$(aws rds describe-db-instances \
-            --db-instance-identifier "$DB_IDENTIFIER" \
-            --region ${{ env.AWS_REGION }} \
-            --query 'DBInstances[0].Endpoint.Address' \
-            --output text 2>/dev/null || echo "")
-          
-          DB_NAME=$(aws rds describe-db-instances \
-            --db-instance-identifier "$DB_IDENTIFIER" \
-            --region ${{ env.AWS_REGION }} \
-            --query 'DBInstances[0].DBName' \
-            --output text 2>/dev/null || echo "flowgenie_db")
-          
-          DB_USERNAME=$(aws rds describe-db-instances \
-            --db-instance-identifier "$DB_IDENTIFIER" \
-            --region ${{ env.AWS_REGION }} \
-            --query 'DBInstances[0].MasterUsername' \
-            --output text 2>/dev/null || echo "flowgenie_admin")
-          
-          # Get Redis URL - first check GitHub variable, then fall back to AWS ElastiCache
-          REDIS_URL_FROM_VAR="${{ vars.REDIS_URL }}"
-          REDIS_ENDPOINT=""
-          
-          if [ -n "$REDIS_URL_FROM_VAR" ] && [ "$REDIS_URL_FROM_VAR" != "" ]; then
-            echo "✅ Using REDIS_URL from GitHub variable"
-            REDIS_URL="$REDIS_URL_FROM_VAR"
-          else
-            echo "⚠️  REDIS_URL variable not set, attempting to get from AWS ElastiCache"
-            REDIS_REPLICATION_GROUP="${STAGE}-flowgenie-redis"
-            
-            # For Redis OSS (non-cluster mode), use PrimaryEndpoint.Address
-            # ConfigurationEndpoint is only available for Redis Cluster mode
-            REDIS_ENDPOINT=$(aws elasticache describe-replication-groups \
-              --replication-group-id "$REDIS_REPLICATION_GROUP" \
-              --region ${{ env.AWS_REGION }} \
-              --query 'ReplicationGroups[0].PrimaryEndpoint.Address' \
-              --output text 2>/dev/null || echo "")
-            
-            if [ -n "$REDIS_ENDPOINT" ] && [ "$REDIS_ENDPOINT" != "None" ]; then
-              # Get the port (default is 6379, but check if it's different)
-              REDIS_PORT=$(aws elasticache describe-replication-groups \
-                --replication-group-id "$REDIS_REPLICATION_GROUP" \
-                --region ${{ env.AWS_REGION }} \
-                --query 'ReplicationGroups[0].Port' \
-                --output text 2>/dev/null || echo "6379")
-              
-              REDIS_URL="redis://${REDIS_ENDPOINT}:${REDIS_PORT}"
-              echo "✅ Constructed REDIS_URL from ElastiCache Redis OSS endpoint: ${REDIS_ENDPOINT}:${REDIS_PORT}"
-            else
-              REDIS_URL=""
-              echo "⚠️  Could not get Redis endpoint from AWS ElastiCache"
-              echo "   Replication group ID: $REDIS_REPLICATION_GROUP"
-              echo "   Region: ${{ env.AWS_REGION }}"
-            fi
-          fi
-          
-          # Redis AUTH token is sensitive and cannot be retrieved via AWS CLI
-          # It can be set via GitHub secret REDIS_AUTH_TOKEN or Terraform
-          # If not available from secret, we'll leave it as is (may be set by Terraform)
-          REDIS_AUTH_TOKEN="${{ secrets.REDIS_AUTH_TOKEN }}"
-          if [ -z "$REDIS_AUTH_TOKEN" ]; then
-            REDIS_AUTH_TOKEN=""
-          fi
-          
-          # Build updated environment variables
+          # Start with current environment variables
           UPDATED_ENV=$(echo "$CURRENT_ENV" | jq -c '.')
           
-          # Update STAGE if missing
-          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.STAGE // empty')" ]; then
-            echo "Setting STAGE=$STAGE"
-            UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg stage "$STAGE" '. + {STAGE: $stage}')
-          fi
+          # List of all secrets to inject (from GitHub Secrets)
+          SECRETS=(
+            "APP_URL"
+            "AWS_ACCESS_KEY_ID"
+            "AWS_DYNAMODB"
+            "AWS_SECRET_ACCESS_KEY"
+            "CORS_ORIGINS"
+            "DATABASE_URL"
+            "DB_PASSWORD"
+            "DEVOPS_TOKEN"
+            "FRONTEND_URL"
+            "GOOGLE_APPLICATION_CREDENTIALS"
+            "GOOGLE_CLIENT_SECRET"
+            "GOOGLE_SERVICE_ACCOUNT"
+            "JWT_SECRET"
+            "REDIS_URL"
+            "REDIS_AUTH_TOKEN"
+          )
           
-          # Update NODE_ENV if missing
-          NODE_ENV_VALUE="production"
-          if [ "$STAGE" != "prod" ]; then
-            NODE_ENV_VALUE="$STAGE"
-          fi
+          # List of all variables to inject (from GitHub Variables)
+          VARIABLES=(
+            "AMPLIFY_BRANCH_NAME"
+            "AMPLIFY_DOMAIN"
+            "AMPLIFY_REPOSITORY_URL"
+            "AWS_REGION"
+            "BACKEND_ENVIRONMENT_VARIABLES"
+            "DB_NAME"
+            "DB_USERNAME"
+            "ENABLE_SWAGGER"
+            "FRONTEND_ENVIRONMENT_VARIABLES"
+            "GOOGLE_CLIENT_ID"
+            "GOOGLE_PROJECT_NAME"
+            "GOOGLE_REDIRECT_URI"
+            "JWT_EXPIRES_IN"
+            "REDIS_HOST"
+            "REDIS_PORT"
+            "REFRESH_TOKEN_EXPIRES_IN"
+            "STAGE"
+          )
+          
+          # Inject secrets
+          echo ""
+          echo "🔐 Injecting secrets from GitHub Secrets..."
+          for secret_name in "${SECRETS[@]}"; do
+            # Get the value from environment (mapped from secrets)
+            secret_value=$(eval echo \$$secret_name)
+            
+            if [ -n "$secret_value" ] && [ "$secret_value" != "" ]; then
+              echo "  Setting $secret_name (masked)"
+              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg key "$secret_name" --arg value "$secret_value" '. + {($key): $value}')
+            else
+              echo "  ⚠️  $secret_name not set in GitHub Secrets, skipping"
+            fi
+          done
+          
+          # Inject variables
+          echo ""
+          echo "📝 Injecting variables from GitHub Variables..."
+          for var_name in "${VARIABLES[@]}"; do
+            # Handle special case: AWS_REGION_VAR -> AWS_REGION, STAGE_VAR -> STAGE
+            env_var_name="$var_name"
+            if [ "$var_name" = "AWS_REGION" ]; then
+              env_var_name="AWS_REGION_VAR"
+            elif [ "$var_name" = "STAGE" ]; then
+              env_var_name="STAGE_VAR"
+            fi
+            
+            # Get the value from environment (mapped from vars)
+            var_value=$(eval echo \$$env_var_name)
+            
+            if [ -n "$var_value" ] && [ "$var_value" != "" ]; then
+              echo "  Setting $var_name = $var_value"
+              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg key "$var_name" --arg value "$var_value" '. + {($key): $value}')
+            else
+              echo "  ⚠️  $var_name not set in GitHub Variables, skipping"
+            fi
+          done
+          
+          # Set NODE_ENV based on STAGE if not already set
           if [ -z "$(echo "$UPDATED_ENV" | jq -r '.NODE_ENV // empty')" ]; then
-            echo "Setting NODE_ENV=$NODE_ENV_VALUE"
+            NODE_ENV_VALUE="production"
+            if [ "$STAGE" != "prod" ]; then
+              NODE_ENV_VALUE="$STAGE"
+            fi
+            echo "  Setting NODE_ENV=$NODE_ENV_VALUE"
             UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg env "$NODE_ENV_VALUE" '. + {NODE_ENV: $env}')
-          fi
-          
-          # Update DATABASE_URL if missing
-          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.DATABASE_URL // empty')" ]; then
-            if [ -n "$RDS_ENDPOINT" ] && [ -n "$DB_PASSWORD" ]; then
-              DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_ENDPOINT}:5432/${DB_NAME}"
-              echo "Setting DATABASE_URL (masked)"
-              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg db_url "$DATABASE_URL" '. + {DATABASE_URL: $db_url}')
-            else
-              echo "⚠️  Cannot set DATABASE_URL: RDS endpoint or password not available"
-            fi
-          fi
-          
-          # Update REDIS_URL if missing
-          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.REDIS_URL // empty')" ]; then
-            if [ -n "$REDIS_URL" ] && [ "$REDIS_URL" != "" ]; then
-              echo "Setting REDIS_URL (from GitHub variable or AWS ElastiCache)"
-              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg redis_url "$REDIS_URL" '. + {REDIS_URL: $redis_url}')
-            else
-              echo "⚠️  REDIS_URL not set (GitHub variable not set and Redis endpoint not found, optional)"
-            fi
-          else
-            echo "✅ REDIS_URL already set in Lambda, skipping update"
-          fi
-          
-          # Update REDIS_AUTH_TOKEN if missing and Redis is configured (optional)
-          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.REDIS_AUTH_TOKEN // empty')" ]; then
-            if [ -n "$REDIS_URL" ] || [ -n "$REDIS_ENDPOINT" ]; then
-              if [ -n "$REDIS_AUTH_TOKEN" ]; then
-                echo "Setting REDIS_AUTH_TOKEN (masked)"
-                UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg token "$REDIS_AUTH_TOKEN" '. + {REDIS_AUTH_TOKEN: $token}')
-              else
-                echo "⚠️  REDIS_AUTH_TOKEN not set (may be required if Redis AUTH is enabled)"
-                echo "   Set GitHub secret REDIS_AUTH_TOKEN or ensure Terraform sets it"
-              fi
-            fi
-          else
-            echo "✅ REDIS_AUTH_TOKEN already set in Lambda, skipping update"
-          fi
-          
-          # Update Google OAuth credentials if missing (optional)
-          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.GOOGLE_CLIENT_ID // empty')" ]; then
-            if [ -n "$GOOGLE_CLIENT_ID" ] && [ "$GOOGLE_CLIENT_ID" != "" ]; then
-              echo "Setting GOOGLE_CLIENT_ID (masked)"
-              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg client_id "$GOOGLE_CLIENT_ID" '. + {GOOGLE_CLIENT_ID: $client_id}')
-            else
-              echo "⚠️  GOOGLE_CLIENT_ID not set (Google OAuth will be disabled)"
-              echo "   Set GitHub secret GOOGLE_CLIENT_ID to enable Google OAuth"
-            fi
-          else
-            echo "✅ GOOGLE_CLIENT_ID already set in Lambda, skipping update"
-          fi
-          
-          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.GOOGLE_CLIENT_SECRET // empty')" ]; then
-            if [ -n "$GOOGLE_CLIENT_SECRET" ] && [ "$GOOGLE_CLIENT_SECRET" != "" ]; then
-              echo "Setting GOOGLE_CLIENT_SECRET (masked)"
-              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg client_secret "$GOOGLE_CLIENT_SECRET" '. + {GOOGLE_CLIENT_SECRET: $client_secret}')
-            else
-              echo "⚠️  GOOGLE_CLIENT_SECRET not set (Google OAuth will be disabled)"
-              echo "   Set GitHub secret GOOGLE_CLIENT_SECRET to enable Google OAuth"
-            fi
-          else
-            echo "✅ GOOGLE_CLIENT_SECRET already set in Lambda, skipping update"
-          fi
-          
-          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.GOOGLE_REDIRECT_URI // empty')" ]; then
-            if [ -n "$GOOGLE_REDIRECT_URI" ] && [ "$GOOGLE_REDIRECT_URI" != "" ]; then
-              echo "Setting GOOGLE_REDIRECT_URI"
-              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg redirect_uri "$GOOGLE_REDIRECT_URI" '. + {GOOGLE_REDIRECT_URI: $redirect_uri}')
-            else
-              echo "⚠️  GOOGLE_REDIRECT_URI not set (Google OAuth will be disabled)"
-              echo "   Set GitHub secret GOOGLE_REDIRECT_URI to enable Google OAuth"
-            fi
-          else
-            echo "✅ GOOGLE_REDIRECT_URI already set in Lambda, skipping update"
           fi
           
           # Check if update is needed
