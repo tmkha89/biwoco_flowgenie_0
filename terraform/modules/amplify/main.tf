@@ -2,7 +2,7 @@
 resource "aws_amplify_app" "main" {
   name         = "${var.stage}-flowgenie-frontend"
   repository   = var.repository_url
-  access_token = var.devops_token
+  access_token = "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"
 
   build_spec = <<-EOT
     version: 1
