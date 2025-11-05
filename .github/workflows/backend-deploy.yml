@@ -350,11 +350,38 @@ jobs:
             exit 1
           fi
           
-          # Update function code to use container image
-          aws lambda update-function-code \
+          # Check current package type
+          CURRENT_PACKAGE_TYPE=$(aws lambda get-function \
             --function-name "$FUNCTION_NAME" \
-            --image-uri "$IMAGE_URI" \
-            --region ${{ env.AWS_REGION }}
+            --region ${{ env.AWS_REGION }} \
+            --query 'Configuration.PackageType' \
+            --output text)
+          
+          echo "Current package type: $CURRENT_PACKAGE_TYPE"
+          
+          # If package type is Zip, update it to Image first
+          if [ "$CURRENT_PACKAGE_TYPE" == "Zip" ]; then
+            echo "Converting Lambda function from Zip to Image package type..."
+            aws lambda update-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --package-type Image \
+              --image-uri "$IMAGE_URI" \
+              --region ${{ env.AWS_REGION }}
+            
+            echo "Waiting for function configuration update..."
+            aws lambda wait function-updated \
+              --function-name "$FUNCTION_NAME" \
+              --region ${{ env.AWS_REGION }}
+            
+            echo "✅ Lambda function package type updated to Image"
+          else
+            # Update function code to use container image
+            echo "Updating function code with new image..."
+            aws lambda update-function-code \
+              --function-name "$FUNCTION_NAME" \
+              --image-uri "$IMAGE_URI" \
+              --region ${{ env.AWS_REGION }}
+          fi
           
           echo "✅ Lambda function updated to use container image: $IMAGE_URI"
 
