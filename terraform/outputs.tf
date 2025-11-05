@@ -4,11 +4,6 @@ output "amplify_app_id" {
   value       = module.amplify.app_id
 }
 
-output "amplify_app_url" {
-  description = "Amplify App URL"
-  value       = module.amplify.app_url
-}
-
 output "amplify_arn" {
   description = "Amplify App ARN"
   value       = module.amplify.app_arn
