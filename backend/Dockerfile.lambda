@@ -14,14 +14,43 @@ RUN npm ci --production && \
 # NestJS builds to dist/ with the same structure as src/
 COPY dist/ ./
 
-# Verify lambda.js exists
-RUN if [ ! -f lambda.js ]; then \
-      echo "ERROR: lambda.js not found. Contents of dist:"; \
-      ls -la . | head -20; \
-      find . -name "lambda.js" 2>/dev/null || echo "lambda.js not found anywhere"; \
+# Debug: Show directory structure
+RUN echo "=== Contents of Lambda task root ===" && \
+    ls -la . && \
+    echo "" && \
+    echo "=== Looking for lambda.js ===" && \
+    find . -name "lambda.js" -type f 2>/dev/null || echo "lambda.js not found" && \
+    echo "" && \
+    echo "=== Contents of dist/ if it exists ===" && \
+    (ls -la dist/ 2>/dev/null || echo "dist/ directory not found") && \
+    echo "" && \
+    echo "=== All .js files in root ===" && \
+    find . -maxdepth 1 -name "*.js" -type f || echo "No .js files in root"
+
+# Handle different NestJS build output structures
+# Option 1: dist/lambda.js (if NestJS preserves src structure)
+# Option 2: dist/src/lambda.js (if NestJS flattens to dist/)
+RUN if [ -f dist/lambda.js ]; then \
+      echo "Found lambda.js at dist/lambda.js, copying to root" && \
+      cp dist/lambda.js . && \
+      cp -r dist/*.js dist/*.json 2>/dev/null || true; \
+    elif [ -f dist/src/lambda.js ]; then \
+      echo "Found lambda.js at dist/src/lambda.js, copying to root" && \
+      cp dist/src/lambda.js ./lambda.js && \
+      cp -r dist/src/*.js dist/src/*.json 2>/dev/null || true; \
+    elif [ -f src/lambda.js ]; then \
+      echo "Found lambda.js at src/lambda.js, copying to root" && \
+      cp src/lambda.js ./lambda.js; \
+    elif [ -f lambda.js ]; then \
+      echo "lambda.js already in root"; \
+    else \
+      echo "ERROR: lambda.js not found in any expected location" && \
+      echo "Directory structure:" && \
+      find . -type f -name "*.js" | head -20 && \
       exit 1; \
     fi && \
-    echo "✅ lambda.js found successfully"
+    echo "✅ lambda.js found and copied successfully" && \
+    ls -la lambda.js
 
 # Set the CMD to your handler (Lambda runtime expects the handler path relative to LAMBDA_TASK_ROOT)
 CMD [ "lambda.handler" ]
