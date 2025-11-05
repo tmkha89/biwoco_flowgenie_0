@@ -209,11 +209,12 @@ jobs:
             exit 1
           fi
           
+          # Describe service and suppress Web ACL warnings (Web ACL is optional)
           SERVICE_URL=$(aws apprunner describe-service \
             --service-arn "$SERVICE_ARN" \
             --region ${{ env.AWS_REGION }} \
             --query 'Service.ServiceUrl' \
-            --output text)
+            --output text 2>&1 | grep -v "Error while retrieving Web ACL" | grep -E "^https://" | head -1 || true)
           
           echo "App Runner Service ARN: $SERVICE_ARN"
           echo "App Runner Service URL: $SERVICE_URL"
@@ -222,257 +223,6 @@ jobs:
           
           echo "✅ App Runner service found"
           echo "Service URL: $SERVICE_URL"
-
-      - name: Update App Runner environment variables
-        env:
-          # Secrets from GitHub Secrets
-          APP_URL: ${{ secrets.APP_URL }}
-          AWS_DYNAMODB: ${{ secrets.AWS_DYNAMODB }}
-          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DEVOPS_TOKEN: ${{ secrets.DEVOPS_TOKEN }}
-          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          REDIS_URL: ${{ secrets.REDIS_URL }}
-          REDIS_HOST: ${{ secrets.REDIS_HOST }}
-          REDIS_PORT: ${{ secrets.REDIS_PORT }}
-          # Variables from GitHub Variables
-          AMPLIFY_BRANCH_NAME: ${{ vars.AMPLIFY_BRANCH_NAME }}
-          AMPLIFY_DOMAIN: ${{ vars.AMPLIFY_DOMAIN }}
-          AMPLIFY_REPOSITORY_URL: ${{ vars.AMPLIFY_REPOSITORY_URL }}
-          BACKEND_ENVIRONMENT_VARIABLES: ${{ vars.BACKEND_ENVIRONMENT_VARIABLES }}
-          DB_NAME: ${{ vars.DB_NAME }}
-          DB_USERNAME: ${{ vars.DB_USERNAME }}
-          ENABLE_SWAGGER: ${{ vars.ENABLE_SWAGGER }}
-          FRONTEND_ENVIRONMENT_VARIABLES: ${{ vars.FRONTEND_ENVIRONMENT_VARIABLES }}
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          GOOGLE_PROJECT_NAME: ${{ vars.GOOGLE_PROJECT_NAME }}
-          GOOGLE_REDIRECT_URI: ${{ vars.GOOGLE_REDIRECT_URI }}
-          JWT_EXPIRES_IN: ${{ vars.JWT_EXPIRES_IN }}
-          REFRESH_TOKEN_EXPIRES_IN: ${{ vars.REFRESH_TOKEN_EXPIRES_IN }}
-          STAGE_VAR: ${{ vars.STAGE }}
-        run: |
-          SERVICE_ARN="${{ env.service_arn }}"
-          STAGE="${{ env.STAGE }}"
-          
-          # Ensure jq is available
-          if ! command -v jq &> /dev/null; then
-            echo "jq is required but not installed. Installing..."
-            sudo apt-get update && sudo apt-get install -y jq
-          fi
-          
-          echo "Updating App Runner environment variables from GitHub Secrets and Variables..."
-          
-          # Get current App Runner service configuration
-          SERVICE_CONFIG=$(aws apprunner describe-service \
-            --service-arn "$SERVICE_ARN" \
-            --region ${{ env.AWS_REGION }} \
-            --output json)
-          
-          CURRENT_ENV=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentVariables // {}')
-          
-          echo "Current App Runner environment variables:"
-          echo "$CURRENT_ENV" | jq '.'
-          
-          # Start with current environment variables
-          UPDATED_ENV=$(echo "$CURRENT_ENV" | jq -c '.')
-          
-          # List of all secrets to inject (from GitHub Secrets)
-          SECRETS=(
-            "APP_URL"
-            "AWS_DYNAMODB"
-            "CORS_ORIGINS"
-            "DATABASE_URL"
-            "DB_PASSWORD"
-            "DEVOPS_TOKEN"
-            "FRONTEND_URL"
-            "GOOGLE_APPLICATION_CREDENTIALS"
-            "GOOGLE_CLIENT_SECRET"
-            "GOOGLE_SERVICE_ACCOUNT"
-            "JWT_SECRET"
-            "REDIS_URL"
-            "REDIS_HOST"
-            "REDIS_PORT"
-          )
-          
-          # List of all variables to inject (from GitHub Variables)
-          VARIABLES=(
-            "AMPLIFY_BRANCH_NAME"
-            "AMPLIFY_DOMAIN"
-            "AMPLIFY_REPOSITORY_URL"
-            "BACKEND_ENVIRONMENT_VARIABLES"
-            "DB_NAME"
-            "DB_USERNAME"
-            "ENABLE_SWAGGER"
-            "FRONTEND_ENVIRONMENT_VARIABLES"
-            "GOOGLE_CLIENT_ID"
-            "GOOGLE_PROJECT_NAME"
-            "GOOGLE_REDIRECT_URI"
-            "JWT_EXPIRES_IN"
-            "REFRESH_TOKEN_EXPIRES_IN"
-            "STAGE"
-          )
-          
-          # Inject secrets
-          echo ""
-          echo "🔐 Injecting secrets from GitHub Secrets..."
-          for secret_name in "${SECRETS[@]}"; do
-            # Get the value from environment (mapped from secrets)
-            secret_value=$(eval echo \$$secret_name)
-            
-            if [ -n "$secret_value" ] && [ "$secret_value" != "" ]; then
-              echo "  Setting $secret_name (masked)"
-              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg key "$secret_name" --arg value "$secret_value" '. + {($key): $value}')
-            else
-              echo "  ⚠️  $secret_name not set in GitHub Secrets, skipping"
-            fi
-          done
-          
-          # Inject variables
-          echo ""
-          echo "📝 Injecting variables from GitHub Variables..."
-          for var_name in "${VARIABLES[@]}"; do
-            # Handle special case: STAGE_VAR -> STAGE
-            env_var_name="$var_name"
-            if [ "$var_name" = "STAGE" ]; then
-              env_var_name="STAGE_VAR"
-            fi
-            
-            # Get the value from environment (mapped from vars)
-            var_value=$(eval echo \$$env_var_name)
-            
-            if [ -n "$var_value" ] && [ "$var_value" != "" ]; then
-              echo "  Setting $var_name = $var_value"
-              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg key "$var_name" --arg value "$var_value" '. + {($key): $value}')
-            else
-              echo "  ⚠️  $var_name not set in GitHub Variables, skipping"
-            fi
-          done
-          
-          # Set NODE_ENV based on STAGE if not already set
-          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.NODE_ENV // empty')" ]; then
-            NODE_ENV_VALUE="production"
-            if [ "$STAGE" != "prod" ]; then
-              NODE_ENV_VALUE="$STAGE"
-            fi
-            echo "  Setting NODE_ENV=$NODE_ENV_VALUE"
-            UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg env "$NODE_ENV_VALUE" '. + {NODE_ENV: $env}')
-          fi
-          
-          # Get current service configuration to preserve other settings
-          IMAGE_URI=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.ImageRepository.ImageIdentifier')
-          ACCESS_ROLE_ARN=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.AuthenticationConfiguration.AccessRoleArn')
-          PORT=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.ImageRepository.ImageConfiguration.Port // 3000')
-          
-          # Create update configuration JSON
-          # Note: update-service expects SourceConfiguration at the top level, not nested
-          # Port must be a string, not a number
-          UPDATE_CONFIG=$(jq -n \
-            --arg image_uri "$IMAGE_URI" \
-            --arg access_role_arn "$ACCESS_ROLE_ARN" \
-            --arg port "$PORT" \
-            --argjson env_vars "$UPDATED_ENV" \
-            '{
-              "ImageRepository": {
-                "ImageIdentifier": $image_uri,
-                "ImageConfiguration": {
-                  "Port": $port,
-                  "RuntimeEnvironmentVariables": $env_vars
-                },
-                "ImageRepositoryType": "ECR"
-              },
-              "AuthenticationConfiguration": {
-                "AccessRoleArn": $access_role_arn
-              },
-              "AutoDeploymentsEnabled": true
-            }')
-          
-          # Check if update is needed
-          CURRENT_ENV_STR=$(echo "$CURRENT_ENV" | jq -c -S '.')
-          UPDATED_ENV_STR=$(echo "$UPDATED_ENV" | jq -c -S '.')
-          
-          if [ "$CURRENT_ENV_STR" != "$UPDATED_ENV_STR" ]; then
-            echo ""
-            echo "Updating App Runner service environment variables..."
-            
-            # Save update config to temp file
-            UPDATE_CONFIG_FILE=$(mktemp)
-            echo "$UPDATE_CONFIG" > "$UPDATE_CONFIG_FILE"
-            
-            # Update App Runner service
-            # Note: --source-configuration expects JSON with ImageRepository/AuthenticationConfiguration at root
-            aws apprunner update-service \
-              --service-arn "$SERVICE_ARN" \
-              --source-configuration "file://$UPDATE_CONFIG_FILE" \
-              --region ${{ env.AWS_REGION }} > /dev/null
-            
-            echo "✅ App Runner service environment variables updated"
-            echo "Waiting for service update to complete..."
-            
-            # Wait for service update to complete (polling)
-            MAX_WAIT=1200  # 20 minutes
-            ELAPSED=0
-            UPDATE_STATUS=""
-            
-            while [ $ELAPSED -lt $MAX_WAIT ]; do
-              # Get current operation status
-              OPERATION_STATUS=$(aws apprunner list-operations \
-                --service-arn "$SERVICE_ARN" \
-                --region ${{ env.AWS_REGION }} \
-                --query 'OperationSummaryList[0].Status' \
-                --output text 2>/dev/null || echo "UNKNOWN")
-              
-              # Get service status
-              SERVICE_STATUS=$(aws apprunner describe-service \
-                --service-arn "$SERVICE_ARN" \
-                --region ${{ env.AWS_REGION }} \
-                --query 'Service.Status' \
-                --output text 2>/dev/null || echo "UNKNOWN")
-              
-              echo "  Operation Status: $OPERATION_STATUS | Service Status: $SERVICE_STATUS (Elapsed: ${ELAPSED}s)"
-              
-              # Check if update is complete
-              if [ "$OPERATION_STATUS" != "IN_PROGRESS" ] && [ "$OPERATION_STATUS" != "PENDING" ]; then
-                if [ "$SERVICE_STATUS" == "RUNNING" ]; then
-                  echo "✅ App Runner service update completed successfully"
-                  UPDATE_STATUS="SUCCESS"
-                  break
-                elif [ "$SERVICE_STATUS" == "CREATE_FAILED" ] || [ "$SERVICE_STATUS" == "UPDATE_FAILED" ]; then
-                  echo "❌ App Runner service update failed with status: $SERVICE_STATUS"
-                  UPDATE_STATUS="FAILED"
-                  break
-                fi
-              fi
-              
-              sleep 10
-              ELAPSED=$((ELAPSED + 10))
-            done
-            
-            if [ "$UPDATE_STATUS" == "SUCCESS" ]; then
-              echo "✅ Service is now running with updated configuration"
-            elif [ "$UPDATE_STATUS" == "FAILED" ]; then
-              echo "❌ Service update failed. Check AWS Console for details."
-              exit 1
-            else
-              echo "⚠️  Timeout waiting for service update (waited ${MAX_WAIT}s)"
-              echo "Current status: Operation=$OPERATION_STATUS, Service=$SERVICE_STATUS"
-              echo "Service may still be updating. Check AWS Console for current status."
-            fi
-            
-            # Clean up temp file
-            rm -f "$UPDATE_CONFIG_FILE"
-          else
-            echo ""
-            echo "✅ No changes detected - environment variables are up to date"
-          fi
-          
-          echo ""
-          echo "Updated App Runner environment variables:"
-          echo "$UPDATED_ENV" | jq '.'
 
       - name: Wait for App Runner to deploy new image
         run: |
@@ -503,12 +253,12 @@ jobs:
             fi
           done
           
-          # Get service status
+          # Get service status (suppress Web ACL warnings - Web ACL is optional)
           SERVICE_STATUS=$(aws apprunner describe-service \
             --service-arn "$SERVICE_ARN" \
             --region ${{ env.AWS_REGION }} \
             --query 'Service.Status' \
-            --output text)
+            --output text 2>&1 | grep -v "Error while retrieving Web ACL" | grep -E "^[A-Z_]+$" | head -1 || echo "UNKNOWN")
           
           echo "App Runner Service Status: $SERVICE_STATUS"
           
@@ -569,11 +319,12 @@ jobs:
             exit 1
           fi
           
+          # Describe service and suppress Web ACL warnings (Web ACL is optional)
           SERVICE_URL=$(aws apprunner describe-service \
             --service-arn "$SERVICE_ARN" \
             --region ${{ env.AWS_REGION }} \
             --query 'Service.ServiceUrl' \
-            --output text)
+            --output text 2>&1 | grep -v "Error while retrieving Web ACL" | grep -E "^https://" | head -1 || true)
           
           echo "App Runner Service ARN: $SERVICE_ARN"
           echo "App Runner Service URL: $SERVICE_URL"
@@ -629,10 +380,14 @@ jobs:
           echo "Updating App Runner environment variables from GitHub Secrets and Variables..."
           
           # Get current App Runner service configuration
+          # Suppress Web ACL warnings (Web ACL is optional and may not be configured)
           SERVICE_CONFIG=$(aws apprunner describe-service \
             --service-arn "$SERVICE_ARN" \
             --region ${{ env.AWS_REGION }} \
-            --output json)
+            --output json 2>&1 | grep -v "Error while retrieving Web ACL" || true)
+          
+          # Extract JSON from output (in case warning was mixed in)
+          SERVICE_CONFIG=$(echo "$SERVICE_CONFIG" | jq -c '.' 2>/dev/null || echo "$SERVICE_CONFIG" | grep -o '{.*}' | head -1)
           
           CURRENT_ENV=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentVariables // {}')
           
@@ -725,10 +480,18 @@ jobs:
             UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg env "$NODE_ENV_VALUE" '. + {NODE_ENV: $env}')
           fi
           
+          # Ensure PORT environment variable is set to 3000 (matching Dockerfile EXPOSE and application default)
+          echo "  Ensuring PORT=3000 (matching Dockerfile EXPOSE)"
+          UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c '. + {PORT: "3000"}')
+          
           # Get current service configuration to preserve other settings
           IMAGE_URI=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.ImageRepository.ImageIdentifier')
           ACCESS_ROLE_ARN=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.AuthenticationConfiguration.AccessRoleArn')
-          PORT=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.ImageRepository.ImageConfiguration.Port // 3000')
+          # Always use port 3000 (matching Dockerfile EXPOSE 3000 and application default)
+          # This ensures the container port matches what the app is listening on
+          PORT="3000"
+          
+          echo "Container port will be set to: $PORT (matching Dockerfile EXPOSE and PORT env var)"
           
           # Create update configuration JSON
           # Note: update-service expects SourceConfiguration at the top level, not nested
@@ -788,12 +551,12 @@ jobs:
                 --query 'OperationSummaryList[0].Status' \
                 --output text 2>/dev/null || echo "UNKNOWN")
               
-              # Get service status
+              # Get service status (suppress Web ACL warnings)
               SERVICE_STATUS=$(aws apprunner describe-service \
                 --service-arn "$SERVICE_ARN" \
                 --region ${{ env.AWS_REGION }} \
                 --query 'Service.Status' \
-                --output text 2>/dev/null || echo "UNKNOWN")
+                --output text 2>&1 | grep -v "Error while retrieving Web ACL" | grep -E "^[A-Z_]+$" | head -1 || echo "UNKNOWN")
               
               echo "  Operation Status: $OPERATION_STATUS | Service Status: $SERVICE_STATUS (Elapsed: ${ELAPSED}s)"
               
