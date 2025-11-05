@@ -73,7 +73,7 @@ export class GmailService {
     const client = this.createApiClient(accessToken);
 
     this.logger.log(
-      `Gmail client created successfully: accessToken: ${accessToken}`,
+      `Gmail client created successfully`,
     );
 
     try {

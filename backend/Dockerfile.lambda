@@ -3,9 +3,13 @@ FROM public.ecr.aws/lambda/nodejs:20
 
 # Install Lambda Web Adapter (it's an extension that runs alongside Lambda runtime)
 # The adapter binary needs to be in /opt/extensions/
+# Lambda base image uses Amazon Linux 2, which has curl by default
 RUN mkdir -p /opt/extensions && \
-    curl -Lo /opt/extensions/lambda-adapter https://github.com/awslabs/aws-lambda-web-adapter/releases/download/v0.9.0/aws-lambda-web-adapter && \
-    chmod +x /opt/extensions/lambda-adapter
+    curl -L https://github.com/awslabs/aws-lambda-web-adapter/releases/latest/download/aws-lambda-web-adapter-x86_64 -o /opt/extensions/lambda-adapter && \
+    chmod +x /opt/extensions/lambda-adapter && \
+    ls -lh /opt/extensions/lambda-adapter && \
+    file /opt/extensions/lambda-adapter && \
+    echo "✅ Lambda Web Adapter installed successfully"
 
 # Set environment variables for Lambda Web Adapter
 ENV PORT=8080
