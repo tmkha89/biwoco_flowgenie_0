@@ -38,6 +38,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          # Cache npm dependencies - only cache if lock file exists
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
