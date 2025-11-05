@@ -201,6 +201,9 @@ resource "aws_api_gateway_integration" "lambda" {
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.api.invoke_arn
+
+  # Ensure Lambda permission exists before creating integration
+  depends_on = [aws_lambda_permission.api_gateway]
 }
 
 # API Gateway Method for root
@@ -220,6 +223,9 @@ resource "aws_api_gateway_integration" "lambda_root" {
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.api.invoke_arn
+
+  # Ensure Lambda permission exists before creating integration
+  depends_on = [aws_lambda_permission.api_gateway]
 }
 
 # Lambda Permission for API Gateway
@@ -229,17 +235,31 @@ resource "aws_lambda_permission" "api_gateway" {
   function_name = aws_lambda_function.api.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+
+  # Ensure permission is created before API Gateway deployment
+  depends_on = [aws_lambda_function.api]
 }
 
 # API Gateway Deployment
 resource "aws_api_gateway_deployment" "main" {
   depends_on = [
     aws_api_gateway_integration.lambda,
-    aws_api_gateway_integration.lambda_root
+    aws_api_gateway_integration.lambda_root,
+    aws_lambda_permission.api_gateway
   ]
 
   rest_api_id = aws_api_gateway_rest_api.main.id
   stage_name  = var.stage
+
+  # Force new deployment when Lambda function changes
+  triggers = {
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_integration.lambda.uri,
+      aws_api_gateway_integration.lambda_root.uri,
+      aws_lambda_function.api.function_name,
+      aws_lambda_function.api.last_modified,
+    ]))
+  }
 
   lifecycle {
     create_before_destroy = true
