@@ -480,9 +480,7 @@ jobs:
           # List of all secrets to inject (from GitHub Secrets)
           SECRETS=(
             "APP_URL"
-            "AWS_ACCESS_KEY_ID"
             "AWS_DYNAMODB"
-            "AWS_SECRET_ACCESS_KEY"
             "CORS_ORIGINS"
             "DATABASE_URL"
             "DB_PASSWORD"
@@ -493,6 +491,8 @@ jobs:
             "GOOGLE_SERVICE_ACCOUNT"
             "JWT_SECRET"
             "REDIS_URL"
+            "REDIS_HOST"
+            "REDIS_PORT"
             "REDIS_AUTH_TOKEN"
           )
           
@@ -511,8 +511,6 @@ jobs:
             "GOOGLE_PROJECT_NAME"
             "GOOGLE_REDIRECT_URI"
             "JWT_EXPIRES_IN"
-            "REDIS_HOST"
-            "REDIS_PORT"
             "REFRESH_TOKEN_EXPIRES_IN"
             "STAGE"
           )
