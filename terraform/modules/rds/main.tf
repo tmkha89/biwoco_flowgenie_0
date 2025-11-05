@@ -45,7 +45,7 @@ resource "aws_security_group" "rds" {
 # RDS Parameter Group
 resource "aws_db_parameter_group" "main" {
   family = "postgres16"
-  name   = "${var.stage}-rds-params"
+  name   = "${var.stage}-rds16-params"
 
   parameter {
     name  = "shared_preload_libraries"
