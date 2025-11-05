@@ -65,7 +65,7 @@ variable "frontend_environment_variables" {
   sensitive   = true
 }
 
-variable "devops_toke" {
+variable "devops_token" {
   description = "Github access token"
   type        = string
   default     = "main"
