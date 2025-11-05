@@ -25,24 +25,7 @@ resource "aws_apprunner_service" "backend" {
         value = var.github_branch
       }
       code_configuration {
-        configuration_source = "API"
-        code_configuration_values {
-          build_command = "docker build -t apprunner-image -f backend/Dockerfile backend/"
-          runtime       = "DOCKER"
-          runtime_environment_variables = merge(
-            {
-              PORT             = tostring(var.container_port)
-              NODE_ENV         = var.stage == "prod" ? "production" : var.stage
-              STAGE            = var.stage
-              DATABASE_URL     = "postgresql://${var.db_username}:${var.db_password}@${var.rds_endpoint}:5432/${var.db_name}"
-              REDIS_URL        = var.redis_endpoint != "" ? "redis://${var.redis_endpoint}:6379" : ""
-              REDIS_AUTH_TOKEN = var.redis_auth_token != "" ? var.redis_auth_token : ""
-            },
-            var.environment_variables
-          )
-          start_command               = ""
-          runtime_environment_secrets = {}
-        }
+        configuration_source = "REPOSITORY"
       }
     }
 
@@ -61,6 +44,9 @@ resource "aws_apprunner_service" "backend" {
     memory            = var.memory
     instance_role_arn = aws_iam_role.apprunner_instance.arn
   }
+
+  # Environment variables are set via apprunner.yaml or can be updated via API
+  # For now, we'll use the apprunner.yaml file in the repository
 
   network_configuration {
     ingress_configuration {
