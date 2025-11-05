@@ -65,8 +65,19 @@ jobs:
 
       - name: Terraform Plan
         working-directory: ./terraform
+        id: terraform-plan
+        continue-on-error: false
         run: |
+          set -e
+          echo "🔍 Running Terraform Plan..."
+          echo "Stage: ${{ env.STAGE }}"
+          echo "Region: ${{ env.AWS_REGION }}"
+          echo ""
+          
+          # Run terraform plan with detailed output
+          set +e
           terraform plan \
+            -detailed-exitcode \
             -var="stage=${{ env.STAGE }}" \
             -var="aws_region=${{ env.AWS_REGION }}" \
             -var="db_name=${{ env.db_name }}" \
@@ -74,11 +85,159 @@ jobs:
             -var="db_password=${{ env.db_password }}" \
             -var="amplify_repository_url=${{ env.amplify_repository_url }}" \
             -var="devops_token=${{ secrets.DEVOPS_TOKEN }}" \
-            -out=tfplan
+            -out=tfplan 2>&1 | tee plan_output.txt
+          
+          # Capture exit code from terraform plan
+          PLAN_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          
+          # Terraform plan exit codes:
+          # 0 = success with no changes
+          # 1 = error
+          # 2 = success with changes
+          
+          if [ "$PLAN_EXIT_CODE" -eq 1 ]; then
+            echo ""
+            echo "❌❌❌ Terraform Plan failed with errors! ❌❌❌"
+            echo ""
+            echo "=========================================="
+            echo "FULL ERROR OUTPUT"
+            echo "=========================================="
+            cat plan_output.txt
+            echo ""
+            echo "=========================================="
+            echo "END ERROR OUTPUT"
+            echo "=========================================="
+            echo ""
+            echo "=========================================="
+            echo "TROUBLESHOOTING INFORMATION"
+            echo "=========================================="
+            echo ""
+            echo "1. Checking Terraform version:"
+            terraform version
+            echo ""
+            echo "2. Validating Terraform configuration:"
+            terraform validate || echo "⚠️ Validation also failed"
+            echo ""
+            echo "3. Checking for syntax errors:"
+            terraform fmt -check -recursive || echo "⚠️ Formatting issues found"
+            echo ""
+            echo "4. Common issues to check:"
+            echo "   - Verify all required variables are provided"
+            echo "   - Check for resource naming conflicts"
+            echo "   - Verify AWS credentials have necessary permissions"
+            echo "   - Check resource quotas and limits in AWS"
+            echo "   - Verify VPC, subnets, and security groups exist"
+            echo "   - Check ECR repository exists (if using existing)"
+            echo ""
+            exit 1
+          elif [ "$PLAN_EXIT_CODE" -eq 2 ]; then
+            echo "✅ Terraform Plan completed - changes detected"
+            echo "plan_has_changes=true" >> $GITHUB_OUTPUT
+          elif [ "$PLAN_EXIT_CODE" -eq 0 ]; then
+            echo "✅ Terraform Plan completed - no changes"
+            echo "plan_has_changes=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Save plan output for later steps
+          echo "plan_exit_code=$PLAN_EXIT_CODE" >> $GITHUB_OUTPUT
+
+      - name: Show Terraform Plan Summary
+        if: always()
+        working-directory: ./terraform
+        run: |
+          echo "## 📋 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f plan_output.txt ]; then
+            echo "### Plan Output" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat plan_output.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Plan output file not found" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Terraform Apply
+        if: steps.terraform-plan.outputs.plan_has_changes == 'true'
         working-directory: ./terraform
-        run: terraform apply -auto-approve tfplan
+        continue-on-error: false
+        run: |
+          set -e
+          echo "🚀 Applying Terraform changes..."
+          echo ""
+          
+          # Run terraform apply with detailed output
+          set +e
+          terraform apply \
+            -auto-approve \
+            tfplan 2>&1 | tee apply_output.txt
+          
+          # Capture exit code from terraform apply
+          APPLY_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          
+          if [ "$APPLY_EXIT_CODE" -ne 0 ]; then
+            echo ""
+            echo "❌❌❌ Terraform Apply failed! ❌❌❌"
+            echo ""
+            echo "=========================================="
+            echo "FULL ERROR OUTPUT"
+            echo "=========================================="
+            cat apply_output.txt
+            echo ""
+            echo "=========================================="
+            echo "END ERROR OUTPUT"
+            echo "=========================================="
+            echo ""
+            echo "=========================================="
+            echo "TROUBLESHOOTING INFORMATION"
+            echo "=========================================="
+            echo ""
+            echo "1. Checking Terraform state:"
+            terraform state list 2>&1 | head -20 || echo "⚠️ Could not list state"
+            echo ""
+            echo "2. Checking for partial resource creation:"
+            echo "   Review the error above to identify which resource failed"
+            echo ""
+            echo "3. Common issues to check:"
+            echo "   - Verify AWS credentials have necessary permissions"
+            echo "   - Check resource quotas and limits in AWS"
+            echo "   - Verify all required variables are set"
+            echo "   - Check for resource naming conflicts"
+            echo "   - Verify VPC, subnets, and security groups exist"
+            echo "   - Check ECR repository exists and is accessible"
+            echo "   - Verify IAM roles and policies are correct"
+            echo "   - Check for dependency issues (e.g., VPC connector)"
+            echo ""
+            echo "4. To manually fix:"
+            echo "   - Review AWS Console for partially created resources"
+            echo "   - Check CloudWatch Logs for App Runner/Lambda errors"
+            echo "   - Verify network connectivity (VPC, subnets, security groups)"
+            echo ""
+            exit 1
+          fi
+          
+          echo "✅ Terraform Apply completed successfully"
+
+      - name: Show Terraform Apply Summary
+        if: always()
+        working-directory: ./terraform
+        run: |
+          echo "## ✅ Terraform Apply Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f apply_output.txt ]; then
+            echo "### Apply Output" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -100 apply_output.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Terraform Apply (No Changes)
+        if: steps.terraform-plan.outputs.plan_has_changes != 'true'
+        working-directory: ./terraform
+        run: |
+          echo "ℹ️ No changes detected in Terraform plan - skipping apply"
+          echo "✅ Infrastructure is up to date"
 
       - name: Export Terraform Outputs
         id: terraform-outputs
