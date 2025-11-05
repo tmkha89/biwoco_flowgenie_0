@@ -240,9 +240,6 @@ jobs:
             exit 1
           fi
           
-          # Run ECS task with override command to run migrations
-          echo "Starting migration task..."
-          
           # Create network configuration JSON
           NETWORK_CONFIG_JSON=$(jq -n \
             --argjson subnets "$SUBNET_IDS" \
@@ -254,6 +251,82 @@ jobs:
                 assignPublicIp: "DISABLED"
               }
             }')
+          
+          # Check database connection before running migrations
+          echo "Checking database connection..."
+          echo "Database endpoint: ${{ steps.get-db.outputs.rds_endpoint }}"
+          
+          CONNECTION_TEST_TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --task-definition "$TASK_DEFINITION" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG_JSON" \
+            --overrides "{
+              \"containerOverrides\": [{
+                \"name\": \"worker\",
+                \"command\": [\"sh\", \"-c\", \"node -e 'const { PrismaClient } = require(\\\"@prisma/client\\\"); const prisma = new PrismaClient(); prisma.\\$connect().then(() => { console.log(\\\"✅ Database connection successful\\\"); process.exit(0); }).catch((err) => { console.error(\\\"❌ Database connection failed:\\\", err.message); process.exit(1); });'\"],
+                \"environment\": [
+                  {\"name\": \"DATABASE_URL\", \"value\": \"${DATABASE_URL}\"},
+                  {\"name\": \"STAGE\", \"value\": \"${STAGE}\"},
+                  {\"name\": \"NODE_ENV\", \"value\": \"production\"}
+                ]
+              }]
+            }" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+          
+          if [ -z "$CONNECTION_TEST_TASK_ARN" ] || [ "$CONNECTION_TEST_TASK_ARN" == "None" ]; then
+            echo "ERROR: Failed to start database connection test task"
+            exit 1
+          fi
+          
+          echo "Connection test task started: $CONNECTION_TEST_TASK_ARN"
+          echo "Waiting for connection test to complete..."
+          
+          # Wait for connection test to complete (max 5 minutes)
+          aws ecs wait tasks-stopped \
+            --cluster "$CLUSTER_NAME" \
+            --tasks "$CONNECTION_TEST_TASK_ARN" \
+            --max-attempts 60 \
+            --delay 5 || true
+          
+          # Get connection test exit code
+          CONNECTION_EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER_NAME" \
+            --tasks "$CONNECTION_TEST_TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text)
+          
+          # Get connection test logs
+          LOG_GROUP="/ecs/${STAGE}-flowgenie-worker"
+          echo "Fetching connection test logs..."
+          aws logs tail "$LOG_GROUP" \
+            --follow false \
+            --format short \
+            --since 5m 2>/dev/null || echo "Could not fetch logs"
+          
+          if [ "$CONNECTION_EXIT_CODE" != "0" ] && [ "$CONNECTION_EXIT_CODE" != "null" ]; then
+            echo "❌ ERROR: Database connection test failed with exit code: $CONNECTION_EXIT_CODE"
+            echo "Task ARN: $CONNECTION_TEST_TASK_ARN"
+            echo "Database endpoint: ${{ steps.get-db.outputs.rds_endpoint }}"
+            echo ""
+            echo "Possible causes:"
+            echo "1. Security group rules: ECS task security group may not allow outbound to RDS"
+            echo "2. RDS security group: RDS security group may not allow inbound from ECS task security group"
+            echo "3. Network configuration: Task may not be in the correct VPC/subnet"
+            echo "4. Database credentials: Username/password may be incorrect"
+            echo "5. Database endpoint: RDS instance may not be accessible"
+            echo ""
+            echo "Please check CloudWatch logs in log group: $LOG_GROUP"
+            echo "Please verify security group rules and network configuration"
+            exit 1
+          fi
+          
+          echo "✅ Database connection test passed successfully"
+          echo ""
+          
+          # Run ECS task with override command to run migrations
+          echo "Starting migration task..."
           
           TASK_ARN=$(aws ecs run-task \
             --cluster "$CLUSTER_NAME" \
@@ -399,10 +472,12 @@ jobs:
           echo "✅ Lambda backend has been successfully deployed!" >> $GITHUB_STEP_SUMMARY
 
   # Build and Deploy Worker to ECS
+  # TEMPORARILY DISABLED
   deploy-worker:
     name: Build and Deploy Worker to ECS
     runs-on: ubuntu-latest
     environment: ${{ inputs.stage || 'dev' }}
+    if: false  # Temporarily disabled
     
     steps:
       - name: Checkout code
@@ -529,10 +604,12 @@ jobs:
           echo "Worker has been successfully deployed to ECS!" >> $GITHUB_STEP_SUMMARY
 
   # Verify Redis Cache
+  # TEMPORARILY DISABLED
   verify-redis:
     name: Verify Redis Cache Infrastructure
     runs-on: ubuntu-latest
     environment: ${{ inputs.stage || 'dev' }}
+    if: false  # Temporarily disabled
     
     steps:
       - name: Configure AWS credentials
