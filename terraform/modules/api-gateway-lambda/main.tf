@@ -58,6 +58,10 @@ resource "aws_lambda_function" "api" {
   timeout       = var.lambda_timeout
   memory_size   = var.lambda_memory_size
 
+  # Empty lambda placeholder
+  s3_bucket = "flowgenie-bucket"
+  s3_key    = "dev/api-lambda/lambda-api.zip"
+
   vpc_config {
     subnet_ids         = var.subnet_ids
     security_group_ids = var.security_group_ids
