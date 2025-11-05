@@ -2,7 +2,7 @@
 resource "aws_amplify_app" "main" {
   name       = "${var.stage}-flowgenie-frontend"
   repository = var.repository_url
-  
+
   # OAuth token for GitHub connection (if provided)
   oauth_token = var.devops_token != "" ? var.devops_token : null
 
