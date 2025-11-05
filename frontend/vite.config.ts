@@ -27,7 +27,7 @@ export default defineConfig({
     emptyOutDir: true,
     // Explicitly set the entry point for CI/CD builds
     rollupOptions: {
-      input: './index.html',
+      input: '.frontend/index.html',
     },
     // Ensure proper module resolution during build
     commonjsOptions: {
