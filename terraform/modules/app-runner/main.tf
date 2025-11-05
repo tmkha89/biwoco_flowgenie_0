@@ -1,5 +1,13 @@
-# ECR Repository for Backend
+# Data source for existing ECR repository (if using existing)
+data "aws_ecr_repository" "existing" {
+  count = var.use_existing_ecr ? 1 : 0
+  name  = var.existing_ecr_repository_name
+}
+
+# ECR Repository for Backend (only created if not using existing)
 resource "aws_ecr_repository" "backend" {
+  count = var.use_existing_ecr ? 0 : 1
+  
   name                 = "${var.stage}-flowgenie-backend"
   image_tag_mutability = "MUTABLE"
 
@@ -15,9 +23,14 @@ resource "aws_ecr_repository" "backend" {
   )
 }
 
+# Local value to get the ECR repository URL
+locals {
+  ecr_repository_url = var.use_existing_ecr ? data.aws_ecr_repository.existing[0].repository_url : aws_ecr_repository.backend[0].repository_url
+}
+
 # IAM Role for App Runner to access ECR
 resource "aws_iam_role" "apprunner_access" {
-  name = "${var.stage}-apprunner-access-role"
+  name = var.service_name != "" ? "${var.service_name}-access-role" : "${var.stage}-apprunner-access-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -47,13 +60,13 @@ resource "aws_iam_role_policy_attachment" "apprunner_access" {
 
 # App Runner Service
 resource "aws_apprunner_service" "backend" {
-  service_name = "${var.stage}-flowgenie-apprunner-backend"
+  service_name = var.service_name != "" ? var.service_name : "${var.stage}-flowgenie-apprunner-backend"
 
   source_configuration {
     auto_deployments_enabled = var.auto_deploy_enabled
 
     image_repository {
-      image_identifier      = "${aws_ecr_repository.backend.repository_url}:latest"
+      image_identifier      = "${local.ecr_repository_url}:latest"
       image_configuration {
         port = var.container_port
         runtime_environment_variables = merge(
@@ -119,7 +132,7 @@ resource "aws_apprunner_service" "backend" {
 
 # VPC Connector for App Runner (allows access to RDS and Redis)
 resource "aws_apprunner_vpc_connector" "main" {
-  vpc_connector_name = "${var.stage}-flowgenie-vpc-connector"
+  vpc_connector_name = var.service_name != "" ? "${var.service_name}-vpc-connector" : "${var.stage}-flowgenie-vpc-connector"
   subnets            = var.subnet_ids
   security_groups    = var.security_group_ids
 
@@ -134,7 +147,7 @@ resource "aws_apprunner_vpc_connector" "main" {
 
 # IAM Role for App Runner instances
 resource "aws_iam_role" "apprunner_instance" {
-  name = "${var.stage}-apprunner-instance-role"
+  name = var.service_name != "" ? "${var.service_name}-instance-role" : "${var.stage}-apprunner-instance-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -159,7 +172,7 @@ resource "aws_iam_role" "apprunner_instance" {
 
 # CloudWatch Log Group for App Runner
 resource "aws_cloudwatch_log_group" "apprunner" {
-  name              = "/aws/apprunner/${var.stage}-flowgenie-apprunner-backend"
+  name              = var.service_name != "" ? "/aws/apprunner/${var.service_name}" : "/aws/apprunner/${var.stage}-flowgenie-apprunner-backend"
   retention_in_days = var.stage == "prod" ? 30 : 7
 
   tags = merge(

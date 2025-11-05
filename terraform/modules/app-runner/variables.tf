@@ -79,9 +79,27 @@ variable "memory" {
 }
 
 variable "auto_deploy_enabled" {
-  description = "Enable automatic deployment when code is pushed to GitHub"
+  description = "Enable automatic deployment when new images are pushed to ECR"
   type        = bool
   default     = true
+}
+
+variable "use_existing_ecr" {
+  description = "Use an existing ECR repository instead of creating a new one"
+  type        = bool
+  default     = false
+}
+
+variable "existing_ecr_repository_name" {
+  description = "Name of existing ECR repository to use (required if use_existing_ecr is true)"
+  type        = string
+  default     = ""
+}
+
+variable "service_name" {
+  description = "App Runner service name (optional, defaults to ${stage}-flowgenie-apprunner-backend)"
+  type        = string
+  default     = ""
 }
 
 

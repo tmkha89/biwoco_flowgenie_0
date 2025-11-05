@@ -30,11 +30,11 @@ output "vpc_connector_id" {
 
 output "ecr_repository_url" {
   description = "ECR Repository URL"
-  value       = aws_ecr_repository.backend.repository_url
+  value       = local.ecr_repository_url
 }
 
 output "ecr_repository_arn" {
   description = "ECR Repository ARN"
-  value       = aws_ecr_repository.backend.arn
+  value       = var.use_existing_ecr ? data.aws_ecr_repository.existing[0].arn : aws_ecr_repository.backend[0].arn
 }
 

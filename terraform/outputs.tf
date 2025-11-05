@@ -46,6 +46,22 @@ output "app_runner_vpc_connector_arn" {
   value       = module.app_runner.vpc_connector_arn
 }
 
+# App Runner Lambda Image Instance Outputs
+output "app_runner_func_service_url" {
+  description = "App Runner service URL (using Lambda ECR image)"
+  value       = module.app_runner_lambda_image.service_url
+}
+
+output "app_runner_func_service_arn" {
+  description = "App Runner service ARN (using Lambda ECR image)"
+  value       = module.app_runner_lambda_image.service_arn
+}
+
+output "app_runner_func_service_id" {
+  description = "App Runner service ID (using Lambda ECR image)"
+  value       = module.app_runner_lambda_image.service_id
+}
+
 # RDS Outputs
 output "rds_endpoint" {
   description = "RDS instance endpoint"
