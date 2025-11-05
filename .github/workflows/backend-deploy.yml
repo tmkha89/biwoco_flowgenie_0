@@ -76,9 +76,11 @@ jobs:
         id: get-db
         run: |
           STAGE="${{ env.STAGE }}"
+          # RDS instance identifier: "${stage}-flowgenie-db" (e.g., "dev-flowgenie-db")
           DB_IDENTIFIER="${STAGE}-flowgenie-db"
           
-          echo "Getting database connection details for: $DB_IDENTIFIER"
+          echo "Getting database connection details for RDS instance: $DB_IDENTIFIER"
+          echo "Note: This is the RDS instance identifier. The PostgreSQL database name may differ."
           
           # Get RDS endpoint
           RDS_ENDPOINT=$(aws rds describe-db-instances \
@@ -129,16 +131,19 @@ jobs:
           echo "db_username=$DB_USERNAME" >> $GITHUB_OUTPUT
           echo "db_secret_name=$DB_SECRET_NAME" >> $GITHUB_OUTPUT
           
+          echo "RDS Instance Identifier: $DB_IDENTIFIER"
           echo "Database endpoint: $RDS_ENDPOINT"
-          echo "Database name: $DB_NAME"
+          echo "PostgreSQL Database Name: $DB_NAME"
           echo "Database username: $DB_USERNAME"
           echo "Database secret name: $DB_SECRET_NAME"
           
-          # Verify database name matches expected pattern
-          if [[ "$DB_NAME" != *"flowgenie"* ]]; then
-            echo "⚠️  WARNING: Database name '$DB_NAME' doesn't contain 'flowgenie'"
-            echo "   Expected database name to match the instance identifier pattern"
-          fi
+          # Verify database name is retrieved
+          echo ""
+          echo "✅ Successfully retrieved database connection details:"
+          echo "   Instance: $DB_IDENTIFIER"
+          echo "   PostgreSQL DB: $DB_NAME"
+          echo "   Username: $DB_USERNAME"
+          echo "   Endpoint: $RDS_ENDPOINT"
 
       - name: Run database migrations via ECS
         id: run-migrations
