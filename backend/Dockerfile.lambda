@@ -19,6 +19,9 @@ COPY dist/ ./
 RUN echo "=== Contents after copying dist/ ===" && \
     ls -la . && \
     echo "" && \
+    echo "=== All .js files in root ===" && \
+    ls -la *.js 2>/dev/null | head -20 || echo "No .js files in root" && \
+    echo "" && \
     echo "=== Searching for lambda.js ===" && \
     find . -name "lambda.js" -type f 2>/dev/null || echo "lambda.js not found" && \
     echo "" && \
@@ -29,28 +32,50 @@ RUN echo "=== Contents after copying dist/ ===" && \
     find . -name "database.module.js" -type f 2>/dev/null || echo "database.module.js not found" && \
     echo "" && \
     echo "=== Directory structure (top level) ===" && \
-    find . -maxdepth 2 -type d | head -20
+    find . -maxdepth 2 -type d | head -20 && \
+    echo "" && \
+    echo "=== Checking if lambda.js exists and is readable ===" && \
+    (test -f lambda.js && echo "✅ lambda.js exists" && head -5 lambda.js || echo "❌ lambda.js does not exist or is not readable")
 
 # Verify required files exist in their expected locations
 # lambda.js should be in root, and all modules should be in their respective directories
 RUN if [ ! -f lambda.js ]; then \
       echo "ERROR: lambda.js not found in root" && \
+      echo "Searching everywhere for lambda.js:" && \
       find . -name "lambda.js" -type f && \
+      echo "" && \
+      echo "Listing all files in root:" && \
+      ls -la . && \
       exit 1; \
     fi && \
+    echo "✅ lambda.js found in root" && \
     if [ ! -f app.module.js ]; then \
       echo "ERROR: app.module.js not found in root" && \
       find . -name "app.module.js" -type f && \
       exit 1; \
     fi && \
+    echo "✅ app.module.js found in root" && \
     if [ ! -f database/database.module.js ]; then \
       echo "ERROR: database/database.module.js not found (required by app.module.js)" && \
       find . -name "database.module.js" -type f && \
       exit 1; \
     fi && \
+    echo "✅ database/database.module.js found" && \
+    echo "" && \
     echo "✅ Verification complete: All required files found in correct locations" && \
-    ls -lh lambda.js app.module.js database/database.module.js 2>/dev/null || true
+    echo "File sizes:" && \
+    ls -lh lambda.js app.module.js database/database.module.js 2>/dev/null || true && \
+    echo "" && \
+    echo "Testing if lambda.js can be required (checking syntax):" && \
+    node -e "const lambda = require('./lambda.js'); console.log('✅ lambda.js syntax is valid'); console.log('Exported handler:', typeof lambda.handler);" || echo "⚠️  Warning: lambda.js may have syntax issues" && \
+    echo "" && \
+    echo "=== Final directory structure check ===" && \
+    echo "Working directory: $(pwd)" && \
+    echo "LAMBDA_TASK_ROOT: ${LAMBDA_TASK_ROOT}" && \
+    echo "Files that will be available at runtime:" && \
+    ls -la lambda.js 2>/dev/null || echo "ERROR: lambda.js not visible in final check"
 
 # Set the CMD to your handler (Lambda runtime expects the handler path relative to LAMBDA_TASK_ROOT)
+# Format: ["filename.functionName"] where filename is without .js extension
 CMD [ "lambda.handler" ]
 

@@ -270,7 +270,18 @@ jobs:
             echo "ERROR: Build completed but dist folder is empty or missing"
             exit 1
           fi
-          echo "Build completed successfully"
+          
+          # Verify lambda.js is built
+          if [ ! -f "dist/lambda.js" ]; then
+            echo "ERROR: lambda.js not found in dist/ after build"
+            echo "Checking what files were built:"
+            find dist -name "*.js" -type f | head -20
+            exit 1
+          fi
+          
+          echo "✅ Build completed successfully"
+          echo "✅ lambda.js found in dist/"
+          ls -lh dist/lambda.js
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
