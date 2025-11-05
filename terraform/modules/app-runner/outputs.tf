@@ -25,7 +25,7 @@ output "vpc_connector_arn" {
 
 output "vpc_connector_id" {
   description = "VPC Connector ID"
-  value       = aws_apprunner_vpc_connector.main.vpc_connector_id
+  value       = aws_apprunner_vpc_connector.main.id
 }
 
 output "github_connection_arn" {
