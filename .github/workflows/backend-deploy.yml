@@ -271,17 +271,17 @@ jobs:
             exit 1
           fi
           
-          # Verify lambda.js is built
-          if [ ! -f "dist/lambda.js" ]; then
-            echo "ERROR: lambda.js not found in dist/ after build"
+          # Verify lambda.js is built (NestJS builds to dist/src/)
+          if [ ! -f "dist/src/lambda.js" ]; then
+            echo "ERROR: lambda.js not found in dist/src/ after build"
             echo "Checking what files were built:"
             find dist -name "*.js" -type f | head -20
             exit 1
           fi
           
           echo "✅ Build completed successfully"
-          echo "✅ lambda.js found in dist/"
-          ls -lh dist/lambda.js
+          echo "✅ lambda.js found in dist/src/"
+          ls -lh dist/src/lambda.js
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

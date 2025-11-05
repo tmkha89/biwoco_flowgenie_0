@@ -10,13 +10,13 @@ COPY prisma ./prisma/
 RUN npm ci --production && \
     npx prisma generate
 
-# Copy built application from dist/ to Lambda task root
-# NestJS preserves the directory structure, so we need to maintain it
-# COPY dist/ ./ copies contents of dist/ preserving directory structure
-COPY dist/ ./
+# Copy built application from dist/src/ to Lambda task root
+# NestJS builds to dist/src/, so we copy from there to flatten the structure
+# This ensures lambda.js, app.module.js, etc. are at the root level
+COPY dist/src/ ./
 
 # Debug: Show what was copied
-RUN echo "=== Contents after copying dist/ ===" && \
+RUN echo "=== Contents after copying dist/src/ ===" && \
     ls -la . && \
     echo "" && \
     echo "=== All .js files in root ===" && \
