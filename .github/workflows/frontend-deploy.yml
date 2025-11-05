@@ -34,20 +34,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 🔎 DEBUG: List Frontend Files
-      run: |
-        # List the contents of the 'frontend' directory
-        echo "Listing contents of ./frontend/"
-        ls -al ./frontend/
-        
-        # List the contents of the 'src' directory (where the error is happening)
-        echo "Listing contents of ./frontend/src/"
-        ls -al ./frontend/src/
-        
-        # Check for the specific entry file (main.tsx)
-        if [ ! -f ./frontend/src/main.tsx ]; then
-          echo "❌ CRITICAL: ./frontend/src/main.tsx was NOT found!"
-        fi
+      - name: DEBUG List Frontend Files
+        run: |
+          # List the contents of the 'frontend' directory
+          echo "Listing contents of ./frontend/"
+          ls -al ./frontend/
+          
+          # List the contents of the 'src' directory (where the error is happening)
+          echo "Listing contents of ./frontend/src/"
+          ls -al ./frontend/src/
+          
+          # Check for the specific entry file (main.tsx)
+          if [ ! -f ./frontend/src/main.tsx ]; then
+            echo "CRITICAL: ./frontend/src/main.tsx was NOT found!"
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -188,7 +188,7 @@ jobs:
 
       - name: Deployment Summary
         run: |
-          echo "## 🚀 Frontend Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## Frontend Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** ${{ steps.get-branch.outputs.amplify_branch }}" >> $GITHUB_STEP_SUMMARY
@@ -197,4 +197,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**App URL:** [${{ steps.get-url.outputs.amplify_app_url }}](${{ steps.get-url.outputs.amplify_app_url }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Frontend has been successfully deployed to AWS Amplify!" >> $GITHUB_STEP_SUMMARY
+          echo "Frontend has been successfully deployed to AWS Amplify!" >> $GITHUB_STEP_SUMMARY
