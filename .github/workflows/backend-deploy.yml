@@ -23,7 +23,7 @@ on:
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
   STAGE: ${{ inputs.stage || 'dev' }}
-  NODE_VERSION: '20'
+  NODE_VERSION: '24'
   PYTHON_VERSION: '3.12'
 
 jobs:
