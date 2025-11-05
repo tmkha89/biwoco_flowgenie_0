@@ -9,7 +9,7 @@ export default defineConfig({
   root: '.',
   // Base public path when served in production
   // Use '/' for root deployment, or '/subpath/' for subdirectory deployment
-  base: '/',
+  base: './',
   server: {
     port: 5173
   },
