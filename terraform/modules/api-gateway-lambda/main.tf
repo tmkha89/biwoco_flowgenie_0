@@ -252,12 +252,13 @@ resource "aws_api_gateway_deployment" "main" {
   stage_name  = var.stage
 
   # Force new deployment when Lambda function changes
+  # Using URI and function name - URI changes when Lambda code is updated
+  # Removed last_modified to avoid inconsistent plan issues during apply
   triggers = {
     redeployment = sha1(jsonencode([
       aws_api_gateway_integration.lambda.uri,
       aws_api_gateway_integration.lambda_root.uri,
       aws_lambda_function.api.function_name,
-      aws_lambda_function.api.last_modified,
     ]))
   }
 

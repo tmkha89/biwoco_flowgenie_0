@@ -3,19 +3,25 @@ FROM public.ecr.aws/lambda/nodejs:20
 
 # Install Lambda Web Adapter (it's an extension that runs alongside Lambda runtime)
 # The adapter binary needs to be in /opt/extensions/
-# Download using Node.js since curl might not be available
 RUN mkdir -p /opt/extensions && \
-    echo 'const https=require("https"),fs=require("fs");const file=fs.createWriteStream("/opt/extensions/lambda-adapter");https.get("https://github.com/awslabs/aws-lambda-web-adapter/releases/download/v0.9.0/aws-lambda-web-adapter-x86_64",(r)=>{r.pipe(file);file.on("finish",()=>{file.close();fs.chmodSync("/opt/extensions/lambda-adapter",0o755);process.exit(0);});}).on("error",(e)=>{console.error(e);process.exit(1);});' > /tmp/download.js && \
-    node /tmp/download.js && \
-    rm /tmp/download.js && \
-    chmod +x /opt/extensions/lambda-adapter && \
-    ls -lh /opt/extensions/lambda-adapter && \
-    echo "✅ Lambda Web Adapter installed successfully"
+    curl -L https://github.com/awslabs/aws-lambda-web-adapter/releases/download/v0.9.0/aws-lambda-web-adapter-x86_64 -o /opt/extensions/lambda-adapter && \
+    chmod +x /opt/extensions/lambda-adapter
 
 # Set environment variables for Lambda Web Adapter
 ENV PORT=8080
 ENV READINESS_CHECK_PATH=/health
 ENV LAMBDA_TASK_ROOT=/var/task
+
+# Google OAuth build arguments (passed from GitHub Actions)
+# These can be overridden at runtime via Lambda configuration
+ARG GOOGLE_CLIENT_ID=""
+ARG GOOGLE_CLIENT_SECRET=""
+ARG GOOGLE_REDIRECT_URI=""
+
+# Set as environment variables in the image
+ENV GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+ENV GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+ENV GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
 
 WORKDIR ${LAMBDA_TASK_ROOT}
 
@@ -31,11 +37,6 @@ RUN npm ci --production && \
 # NestJS builds to dist/src/, so we copy from there to flatten the structure
 # This ensures main.js, app.module.js, etc. are at the root level
 COPY dist/src/ ./
-
-# Set environment variables for Lambda Web Adapter
-ENV PORT=8080
-ENV READINESS_CHECK_PATH=/health
-ENV LAMBDA_TASK_ROOT=/var/task
 
 # Debug: Show what was copied
 RUN echo "=== Contents after copying dist/src/ ===" && \
