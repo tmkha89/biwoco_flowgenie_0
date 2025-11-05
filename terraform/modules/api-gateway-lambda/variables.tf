@@ -90,3 +90,31 @@ variable "tags" {
   default     = {}
 }
 
+variable "api_gateway_logging_level" {
+  description = "Logging level for API Gateway execution logs. Options: OFF, ERROR, INFO"
+  type        = string
+  default     = "INFO"
+  validation {
+    condition     = contains(["OFF", "ERROR", "INFO"], var.api_gateway_logging_level)
+    error_message = "api_gateway_logging_level must be one of: OFF, ERROR, INFO"
+  }
+}
+
+variable "enable_xray_tracing" {
+  description = "Enable X-Ray tracing for API Gateway"
+  type        = bool
+  default     = false
+}
+
+variable "api_gateway_throttling_burst_limit" {
+  description = "Throttling burst limit for API Gateway"
+  type        = number
+  default     = 5000
+}
+
+variable "api_gateway_throttling_rate_limit" {
+  description = "Throttling rate limit for API Gateway (requests per second)"
+  type        = number
+  default     = 10000
+}
+

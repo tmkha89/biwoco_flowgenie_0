@@ -116,6 +116,67 @@ resource "aws_api_gateway_rest_api" "main" {
   )
 }
 
+# IAM Role for API Gateway CloudWatch Logs
+resource "aws_iam_role" "apigateway_cloudwatch_role" {
+  name = "${var.stage}-apigateway-cloudwatch-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "apigateway.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.stage}-apigateway-cloudwatch-role"
+    }
+  )
+}
+
+resource "aws_iam_role_policy_attachment" "apigateway_cloudwatch_policy" {
+  role       = aws_iam_role.apigateway_cloudwatch_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+}
+
+# API Gateway Account Settings (enables CloudWatch logging)
+resource "aws_api_gateway_account" "main" {
+  cloudwatch_role_arn = aws_iam_role.apigateway_cloudwatch_role.arn
+}
+
+# CloudWatch Log Group for API Gateway Access Logs
+resource "aws_cloudwatch_log_group" "api_gateway_access" {
+  name              = "/aws/apigateway/${var.stage}-flowgenie-api/access"
+  retention_in_days = var.stage == "prod" ? 30 : 7
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.stage}-api-gateway-access-logs"
+    }
+  )
+}
+
+# CloudWatch Log Group for API Gateway Execution Logs
+resource "aws_cloudwatch_log_group" "api_gateway_execution" {
+  name              = "/aws/apigateway/${var.stage}-flowgenie-api/execution"
+  retention_in_days = var.stage == "prod" ? 30 : 7
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.stage}-api-gateway-execution-logs"
+    }
+  )
+}
+
 # API Gateway Resource (proxy)
 resource "aws_api_gateway_resource" "proxy" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -191,11 +252,77 @@ resource "aws_api_gateway_stage" "main" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   stage_name    = var.stage
 
+  # Access Logging Configuration
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_gateway_access.arn
+    format = <<EOF
+{
+  "requestId": "$context.requestId",
+  "ip": "$context.identity.sourceIp",
+  "caller": "$context.identity.caller",
+  "user": "$context.identity.user",
+  "requestTime": "$context.requestTime",
+  "httpMethod": "$context.httpMethod",
+  "resourcePath": "$context.resourcePath",
+  "status": $context.status,
+  "protocol": "$context.protocol",
+  "responseLength": $context.responseLength,
+  "error": {
+    "message": "$context.error.message",
+    "messageString": "$context.error.messageString"
+  },
+  "integration": {
+    "error": "$context.integrationErrorMessage",
+    "latency": "$context.integration.latency",
+    "status": "$context.integration.status"
+  },
+  "requestTimeEpoch": $context.requestTimeEpoch,
+  "responseLatency": $context.responseLatency
+}
+EOF
+  }
+
+  # Execution Logging Configuration
+  xray_tracing_enabled = var.enable_xray_tracing
+
   tags = merge(
     var.tags,
     {
       Name = "${var.stage}-flowgenie-api-stage"
     }
   )
+
+  depends_on = [
+    aws_api_gateway_account.main,
+    aws_cloudwatch_log_group.api_gateway_access,
+    aws_cloudwatch_log_group.api_gateway_execution
+  ]
+}
+
+# API Gateway Method Settings (for execution logging)
+resource "aws_api_gateway_method_settings" "main" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  stage_name  = aws_api_gateway_stage.main.stage_name
+  method_path = "*/*"
+
+  settings {
+    # Enable execution logging
+    logging_level = var.api_gateway_logging_level
+
+    # Enable detailed CloudWatch metrics
+    metrics_enabled = true
+
+    # Enable data trace (logs request/response bodies)
+    data_trace_enabled = var.stage == "prod" ? false : true
+
+    # Throttling settings
+    throttling_burst_limit = var.api_gateway_throttling_burst_limit
+    throttling_rate_limit  = var.api_gateway_throttling_rate_limit
+  }
+
+  depends_on = [
+    aws_api_gateway_account.main,
+    aws_cloudwatch_log_group.api_gateway_execution
+  ]
 }
 

@@ -394,7 +394,197 @@ jobs:
             --function-name "$FUNCTION_NAME" \
             --region ${{ env.AWS_REGION }}
           
-          echo "Lambda function is ready"
+          echo "✅ Lambda function is ready"
+
+      - name: Update Lambda environment variables
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          REDIS_AUTH_TOKEN: ${{ secrets.REDIS_AUTH_TOKEN }}
+        run: |
+          FUNCTION_NAME="${{ steps.get-lambda.outputs.lambda_function_name }}"
+          STAGE="${{ env.STAGE }}"
+          
+          # Ensure jq is available
+          if ! command -v jq &> /dev/null; then
+            echo "jq is required but not installed. Installing..."
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+          
+          echo "Updating Lambda environment variables..."
+          
+          # Get current Lambda function configuration
+          LAMBDA_CONFIG=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region ${{ env.AWS_REGION }} \
+            --output json)
+          
+          CURRENT_ENV=$(echo "$LAMBDA_CONFIG" | jq -r '.Environment.Variables // {}')
+          
+          echo "Current Lambda environment variables:"
+          echo "$CURRENT_ENV" | jq '.'
+          
+          # Use database details from previous step if available, otherwise query
+          if [ -n "${{ steps.get-db.outputs.rds_endpoint }}" ]; then
+            RDS_ENDPOINT="${{ steps.get-db.outputs.rds_endpoint }}"
+            DB_NAME="${{ steps.get-db.outputs.db_name }}"
+            DB_USERNAME="${{ steps.get-db.outputs.db_username }}"
+            echo "Using database details from previous step"
+          else
+            # Get database connection details
+            DB_IDENTIFIER="${STAGE}-flowgenie-db"
+            RDS_ENDPOINT=$(aws rds describe-db-instances \
+              --db-instance-identifier "$DB_IDENTIFIER" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'DBInstances[0].Endpoint.Address' \
+              --output text 2>/dev/null || echo "")
+            
+            DB_NAME=$(aws rds describe-db-instances \
+              --db-instance-identifier "$DB_IDENTIFIER" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'DBInstances[0].DBName' \
+              --output text 2>/dev/null || echo "flowgenie_db")
+            
+            DB_USERNAME=$(aws rds describe-db-instances \
+              --db-instance-identifier "$DB_IDENTIFIER" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'DBInstances[0].MasterUsername' \
+              --output text 2>/dev/null || echo "flowgenie_admin")
+          fi
+          
+          # Get Redis endpoint (if exists)
+          REDIS_REPLICATION_GROUP="${STAGE}-flowgenie-redis"
+          REDIS_ENDPOINT=$(aws elasticache describe-replication-groups \
+            --replication-group-id "$REDIS_REPLICATION_GROUP" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'ReplicationGroups[0].ConfigurationEndpoint.Address' \
+            --output text 2>/dev/null || echo "")
+          
+          # Redis AUTH token is sensitive and cannot be retrieved via AWS CLI
+          # It can be set via GitHub secret REDIS_AUTH_TOKEN or Terraform
+          # If not available from secret, we'll leave it as is (may be set by Terraform)
+          if [ -z "$REDIS_AUTH_TOKEN" ]; then
+            REDIS_AUTH_TOKEN=""
+          fi
+          
+          # Build updated environment variables
+          UPDATED_ENV=$(echo "$CURRENT_ENV" | jq -c '.')
+          
+          # Update STAGE if missing
+          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.STAGE // empty')" ]; then
+            echo "Setting STAGE=$STAGE"
+            UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg stage "$STAGE" '. + {STAGE: $stage}')
+          fi
+          
+          # Update NODE_ENV if missing
+          NODE_ENV_VALUE="production"
+          if [ "$STAGE" != "prod" ]; then
+            NODE_ENV_VALUE="$STAGE"
+          fi
+          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.NODE_ENV // empty')" ]; then
+            echo "Setting NODE_ENV=$NODE_ENV_VALUE"
+            UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg env "$NODE_ENV_VALUE" '. + {NODE_ENV: $env}')
+          fi
+          
+          # Update DATABASE_URL if missing
+          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.DATABASE_URL // empty')" ]; then
+            if [ -n "$RDS_ENDPOINT" ] && [ -n "$DB_PASSWORD" ]; then
+              DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_ENDPOINT}:5432/${DB_NAME}"
+              echo "Setting DATABASE_URL (masked)"
+              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg db_url "$DATABASE_URL" '. + {DATABASE_URL: $db_url}')
+            else
+              echo "⚠️  Cannot set DATABASE_URL: RDS endpoint or password not available"
+            fi
+          fi
+          
+          # Update REDIS_URL if missing and Redis is available
+          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.REDIS_URL // empty')" ]; then
+            if [ -n "$REDIS_ENDPOINT" ]; then
+              REDIS_URL="redis://${REDIS_ENDPOINT}:6379"
+              echo "Setting REDIS_URL=$REDIS_URL"
+              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg redis_url "$REDIS_URL" '. + {REDIS_URL: $redis_url}')
+            else
+              echo "⚠️  REDIS_URL not set (Redis endpoint not found, optional)"
+            fi
+          fi
+          
+          # Update REDIS_AUTH_TOKEN if missing and we have it from secrets (optional)
+          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.REDIS_AUTH_TOKEN // empty')" ] && [ -n "$REDIS_ENDPOINT" ]; then
+            if [ -n "$REDIS_AUTH_TOKEN" ]; then
+              echo "Setting REDIS_AUTH_TOKEN (masked)"
+              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg token "$REDIS_AUTH_TOKEN" '. + {REDIS_AUTH_TOKEN: $token}')
+            else
+              echo "⚠️  REDIS_AUTH_TOKEN not set (may be required if Redis AUTH is enabled)"
+              echo "   Set GitHub secret REDIS_AUTH_TOKEN or ensure Terraform sets it"
+            fi
+          fi
+          
+          # Check if update is needed
+          CURRENT_ENV_STR=$(echo "$CURRENT_ENV" | jq -c -S '.')
+          UPDATED_ENV_STR=$(echo "$UPDATED_ENV" | jq -c -S '.')
+          
+          if [ "$CURRENT_ENV_STR" != "$UPDATED_ENV_STR" ]; then
+            echo ""
+            echo "Updating Lambda function environment variables..."
+            
+            # Update Lambda function configuration
+            aws lambda update-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --environment "Variables=${UPDATED_ENV_STR}" \
+              --region ${{ env.AWS_REGION }} > /dev/null
+            
+            echo "Waiting for Lambda function configuration update..."
+            aws lambda wait function-updated \
+              --function-name "$FUNCTION_NAME" \
+              --region ${{ env.AWS_REGION }}
+            
+            echo "✅ Lambda environment variables updated"
+          else
+            echo ""
+            echo "✅ All environment variables are already set correctly"
+          fi
+          
+          # Display final environment variables (masked)
+          echo ""
+          echo "Final Lambda environment variables:"
+          FINAL_ENV=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Environment.Variables' \
+            --output json)
+          
+          # Mask sensitive values
+          MASKED_ENV=$(echo "$FINAL_ENV" | jq -c '
+            if .DATABASE_URL then .DATABASE_URL = (.DATABASE_URL | split("@")[0] + "@***") else . end |
+            if .REDIS_AUTH_TOKEN and .REDIS_AUTH_TOKEN != "" then .REDIS_AUTH_TOKEN = "***" else . end
+          ')
+          echo "$MASKED_ENV" | jq '.'
+          
+          # Verify required variables are set
+          MISSING_VARS=()
+          
+          if [ -z "$(echo "$FINAL_ENV" | jq -r '.DATABASE_URL // empty')" ]; then
+            MISSING_VARS+=("DATABASE_URL")
+          fi
+          
+          if [ -z "$(echo "$FINAL_ENV" | jq -r '.NODE_ENV // empty')" ]; then
+            MISSING_VARS+=("NODE_ENV")
+          fi
+          
+          if [ -z "$(echo "$FINAL_ENV" | jq -r '.STAGE // empty')" ]; then
+            MISSING_VARS+=("STAGE")
+          fi
+          
+          if [ ${#MISSING_VARS[@]} -gt 0 ]; then
+            echo ""
+            echo "❌ ERROR: Required environment variables are still missing after update:"
+            printf '  - %s\n' "${MISSING_VARS[@]}"
+            echo ""
+            echo "Please ensure these variables can be automatically retrieved or set them manually."
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ All required environment variables are set"
 
       - name: Lambda Deployment Summary
         run: |
