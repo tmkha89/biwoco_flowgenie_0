@@ -150,67 +150,19 @@ jobs:
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
-          # Ensure jq is available
           if ! command -v jq &> /dev/null; then
-            echo "jq is required but not installed. Installing..."
             sudo apt-get update && sudo apt-get install -y jq
           fi
+          
           STAGE="${{ env.STAGE }}"
-          
-          # Get database password from secret
-          echo "Retrieving database password..."
-          SECRET_NAME="DB_PASSWORD"
-          
-          # Verify password was retrieved successfully
-          if [ -z "$DB_PASSWORD" ]; then
-            echo "❌ ERROR: Database password is empty!"
-            echo "GitHub secret '$SECRET_NAME' is not set or is empty"
-            echo "Please ensure the secret is configured in:"
-            echo "  Repository Settings → Secrets and variables → Actions → Secrets"
-            exit 1
-          fi
-          
-          # Verify password is not just whitespace
-          if [ -z "${DB_PASSWORD// }" ]; then
-            echo "❌ ERROR: Database password contains only whitespace!"
-            echo "GitHub secret '$SECRET_NAME' appears to be invalid"
-            exit 1
-          fi
-          
-          # Show password status (without revealing the actual password)
-          PASSWORD_LENGTH=${#DB_PASSWORD}
-          echo "✅ Database password retrieved successfully"
-          echo "  Secret name: $SECRET_NAME"
-          echo "  Password length: $PASSWORD_LENGTH characters"
-          echo "  First character: ${DB_PASSWORD:0:1}***"
-          echo "  Last character: ***${DB_PASSWORD: -1}"
-          echo ""
-          
-          # Get ECS cluster and task definition details
           CLUSTER_NAME="${STAGE}-flowgenie-worker"
           TASK_DEFINITION="${STAGE}-flowgenie-worker"
           
-          echo "Running database migrations via ECS task..."
-          echo "Cluster: $CLUSTER_NAME"
-          echo "Task Definition: $TASK_DEFINITION"
+          # Construct DATABASE_URL
+          DATABASE_URL="postgresql://${{ steps.get-db.outputs.db_username }}:${DB_PASSWORD}@${{ steps.get-db.outputs.rds_endpoint }}:5432/${{ steps.get-db.outputs.db_name }}"
           
-          # Get task definition ARN
-          TASK_DEF_ARN=$(aws ecs describe-task-definition \
-            --task-definition "$TASK_DEFINITION" \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -z "$TASK_DEF_ARN" ] || [ "$TASK_DEF_ARN" == "None" ]; then
-            echo "ERROR: Task definition '$TASK_DEFINITION' not found"
-            echo "Please ensure the ECS infrastructure is deployed first"
-            exit 1
-          fi
-          
-          # Get network configuration from existing ECS service
+          # Get network configuration from ECS service
           SERVICE_NAME="${STAGE}-flowgenie-worker"
-          echo "Getting network configuration from ECS service..."
-          
-          # Get network configuration from service (if it exists)
           NETWORK_CONFIG=$(aws ecs describe-services \
             --cluster "$CLUSTER_NAME" \
             --services "$SERVICE_NAME" \
@@ -218,115 +170,10 @@ jobs:
             --output json 2>/dev/null || echo "{}")
           
           if [ "$NETWORK_CONFIG" != "{}" ] && [ "$NETWORK_CONFIG" != "null" ]; then
-            # Extract subnet IDs and security group IDs from service
             SUBNET_IDS=$(echo "$NETWORK_CONFIG" | jq -r '.subnets[]' | jq -R -s -c 'split("\n") | map(select(length > 0))')
             SECURITY_GROUP_IDS=$(echo "$NETWORK_CONFIG" | jq -r '.securityGroups[]' | jq -R -s -c 'split("\n") | map(select(length > 0))')
           else
-            # Fallback: Get from task definition or VPC
-            echo "Service not found, getting network config from VPC..."
-            DB_IDENTIFIER="${STAGE}-flowgenie-db"
-            VPC_ID=$(aws rds describe-db-instances \
-              --db-instance-identifier "$DB_IDENTIFIER" \
-              --query 'DBInstances[0].DBSubnetGroup.VpcId' \
-              --output text 2>/dev/null || echo "")
-            
-            if [ -z "$VPC_ID" ] || [ "$VPC_ID" == "None" ]; then
-              echo "ERROR: Could not determine VPC ID"
-              exit 1
-            fi
-            
-            # Get subnet IDs (prefer private subnets)
-            SUBNET_IDS=$(aws ec2 describe-subnets \
-              --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=*private*" \
-              --query 'Subnets[*].SubnetId' \
-              --output json | jq -c '.')
-            
-            if [ -z "$SUBNET_IDS" ] || [ "$SUBNET_IDS" == "null" ] || [ "$SUBNET_IDS" == "[]" ]; then
-              # Fallback to any subnet in VPC
-              SUBNET_IDS=$(aws ec2 describe-subnets \
-                --filters "Name=vpc-id,Values=$VPC_ID" \
-                --query 'Subnets[0:2].SubnetId' \
-                --output json | jq -c '.')
-            fi
-            
-            # Get security group ID (from backend security group)
-            SECURITY_GROUP_ID=$(aws ec2 describe-security-groups \
-              --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=*${STAGE}*backend*" \
-              --query 'SecurityGroups[0].GroupId' \
-              --output text)
-            
-            if [ -z "$SECURITY_GROUP_ID" ] || [ "$SECURITY_GROUP_ID" == "None" ]; then
-              echo "ERROR: Could not find security group"
-              exit 1
-            fi
-            
-            SECURITY_GROUP_IDS="[\"$SECURITY_GROUP_ID\"]"
-          fi
-          
-          echo "Subnet IDs: $SUBNET_IDS"
-          echo "Security Group IDs: $SECURITY_GROUP_IDS"
-          
-          # Construct DATABASE_URL
-          DATABASE_URL="postgresql://${{ steps.get-db.outputs.db_username }}:${DB_PASSWORD}@${{ steps.get-db.outputs.rds_endpoint }}:5432/${{ steps.get-db.outputs.db_name }}"
-          
-          # Verify DATABASE_URL construction
-          echo "Verifying DATABASE_URL construction..."
-          if [ -z "$DATABASE_URL" ]; then
-            echo "❌ ERROR: DATABASE_URL is empty!"
-            exit 1
-          fi
-          
-          # Extract components from DATABASE_URL for verification (without password)
-          DB_URL_WITHOUT_PASSWORD=$(echo "$DATABASE_URL" | sed 's/:[^:@]*@/:***@/')
-          echo "✅ DATABASE_URL constructed successfully"
-          echo "  Format: $DB_URL_WITHOUT_PASSWORD"
-          
-          # Verify all components are present
-          if [[ "$DATABASE_URL" != *"${{ steps.get-db.outputs.db_username }}"* ]]; then
-            echo "❌ ERROR: Username not found in DATABASE_URL"
-            exit 1
-          fi
-          
-          if [[ "$DATABASE_URL" != *"${{ steps.get-db.outputs.rds_endpoint }}"* ]]; then
-            echo "❌ ERROR: Endpoint not found in DATABASE_URL"
-            exit 1
-          fi
-          
-          if [[ "$DATABASE_URL" != *"${{ steps.get-db.outputs.db_name }}"* ]]; then
-            echo "❌ ERROR: Database name not found in DATABASE_URL"
-            exit 1
-          fi
-          
-          if [[ "$DATABASE_URL" != *"${DB_PASSWORD}"* ]]; then
-            echo "❌ ERROR: Password not found in DATABASE_URL"
-            exit 1
-          fi
-          
-          # Debug: Show connection details (mask password)
-          echo ""
-          echo "Database connection details:"
-          echo "  Username: ${{ steps.get-db.outputs.db_username }}"
-          echo "  Database: ${{ steps.get-db.outputs.db_name }}"
-          echo "  Endpoint: ${{ steps.get-db.outputs.rds_endpoint }}"
-          echo "  Password length: ${#DB_PASSWORD} characters"
-          echo "  Password in URL: ${DB_PASSWORD:0:1}***${DB_PASSWORD: -1} (masked)"
-          echo ""
-          echo "⚠️  If authentication fails, verify:"
-          echo "  1. GitHub secret 'DB_PASSWORD' matches the RDS master password"
-          echo "  2. The RDS master username matches: ${{ steps.get-db.outputs.db_username }}"
-          echo "  3. The password hasn't been changed in RDS after deployment"
-          echo "  4. Special characters in password are properly escaped in the DATABASE_URL"
-          echo ""
-          
-          # Get ECR repository URI for the image
-          ECR_REPO="${STAGE}-flowgenie-worker"
-          ECR_URI=$(aws ecr describe-repositories \
-            --repository-names "$ECR_REPO" \
-            --query 'repositories[0].repositoryUri' \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -z "$ECR_URI" ]; then
-            echo "ERROR: ECR repository '$ECR_REPO' not found"
+            echo "ERROR: Could not get network configuration from ECS service"
             exit 1
           fi
           
@@ -342,215 +189,8 @@ jobs:
               }
             }')
           
-          # Check database connection before running migrations
-          echo "Checking database connection..."
-          echo "Database endpoint: ${{ steps.get-db.outputs.rds_endpoint }}"
-          
-          # Verify security group configuration
-          echo ""
-          echo "Verifying security group configuration..."
-          DB_IDENTIFIER="${STAGE}-flowgenie-db"
-          RDS_SG_ID=$(aws rds describe-db-instances \
-            --db-instance-identifier "$DB_IDENTIFIER" \
-            --query 'DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId' \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$RDS_SG_ID" ] && [ "$RDS_SG_ID" != "None" ]; then
-            echo "RDS Security Group ID: $RDS_SG_ID"
-            echo "ECS Task Security Group IDs: $SECURITY_GROUP_IDS"
-            
-            # Check if RDS security group allows inbound from ECS task security groups
-            echo ""
-            echo "Checking RDS security group rules..."
-            for SG_ID in $(echo "$SECURITY_GROUP_IDS" | jq -r '.[]'); do
-              echo "Checking if RDS SG ($RDS_SG_ID) allows inbound from ECS SG ($SG_ID)..."
-              INGRESS_RULES=$(aws ec2 describe-security-groups \
-                --group-ids "$RDS_SG_ID" \
-                --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && ToPort==\`5432\` && IpProtocol==\`tcp\`]" \
-                --output json 2>/dev/null || echo "[]")
-              
-              ALLOWS_ACCESS=$(echo "$INGRESS_RULES" | jq -r --arg sg "$SG_ID" '[.[] | select(.UserIdGroupPairs[]?.GroupId == $sg)] | length > 0')
-              
-              if [ "$ALLOWS_ACCESS" == "true" ]; then
-                echo "✅ RDS security group allows inbound from ECS security group $SG_ID"
-              else
-                echo "❌ WARNING: RDS security group does NOT allow inbound from ECS security group $SG_ID"
-                echo "   You may need to add an inbound rule to RDS security group $RDS_SG_ID"
-                echo "   to allow TCP port 5432 from security group $SG_ID"
-              fi
-            done
-          else
-            echo "Warning: Could not determine RDS security group ID"
-          fi
-          echo ""
-          
-          # Create connection test command using jq
-          # Test connection using prisma migrate status (read-only, uses Prisma CLI)
-          # This works because Prisma CLI is available via npx and doesn't require @prisma/client
-          # Note: Mask password in DATABASE_URL for logging (but keep it in the actual env var)
-          DB_URL_FOR_LOG=$(echo "$DATABASE_URL" | sed 's/:[^:@]*@/:***@/')
-          echo "Testing connection with DATABASE_URL: $DB_URL_FOR_LOG"
-          
-          # Verify DATABASE_URL is not empty before passing to ECS task
-          if [ -z "$DATABASE_URL" ]; then
-            echo "❌ ERROR: DATABASE_URL is empty, cannot proceed with connection test"
-            exit 1
-          fi
-          
-          # Verify DATABASE_URL contains password (should be longer than just username@host)
-          MIN_EXPECTED_LENGTH=$((${#DB_PASSWORD} + 50))  # Rough estimate: password + other components
-          if [ ${#DATABASE_URL} -lt $MIN_EXPECTED_LENGTH ]; then
-            echo "⚠️  WARNING: DATABASE_URL seems shorter than expected (${#DATABASE_URL} chars)"
-            echo "   This might indicate the password wasn't properly included"
-          fi
-          
-          # Create the connection test command as a separate variable to avoid jq escaping issues
-          CONNECTION_TEST_CMD='cd /app && echo "Verifying DATABASE_URL is set..." && if [ -z "$DATABASE_URL" ]; then echo "❌ ERROR: DATABASE_URL is empty in container"; exit 1; fi && echo "DATABASE_URL length: ${#DATABASE_URL}" && OUTPUT=$(npx prisma migrate status 2>&1); EXIT_CODE=$?; echo "$OUTPUT"; if [ $EXIT_CODE -eq 0 ] && ! echo "$OUTPUT" | grep -q "P1000\|Authentication failed\|not valid"; then echo "✅ Database connection successful"; exit 0; else echo "❌ Database connection failed"; exit 1; fi'
-          
-          OVERRIDES_JSON=$(jq -n \
-            --arg container_name "worker" \
-            --arg db_url "$DATABASE_URL" \
-            --arg stage "$STAGE" \
-            --arg cmd "$CONNECTION_TEST_CMD" \
-            '{
-              containerOverrides: [{
-                name: $container_name,
-                command: ["sh", "-c", $cmd],
-                environment: [
-                  {name: "DATABASE_URL", value: $db_url},
-                  {name: "STAGE", value: $stage},
-                  {name: "NODE_ENV", value: "production"}
-                ]
-              }]
-            }')
-          
-          # Verify the JSON was created successfully
-          if [ -z "$OVERRIDES_JSON" ] || [ "$OVERRIDES_JSON" == "null" ]; then
-            echo "❌ ERROR: Failed to create task overrides JSON"
-            exit 1
-          fi
-          
-          # Verify DATABASE_URL is in the JSON (masked for security)
-          if echo "$OVERRIDES_JSON" | jq -e '.containerOverrides[0].environment[] | select(.name == "DATABASE_URL") | .value' > /dev/null 2>&1; then
-            ENV_DB_URL=$(echo "$OVERRIDES_JSON" | jq -r '.containerOverrides[0].environment[] | select(.name == "DATABASE_URL") | .value')
-            ENV_DB_URL_MASKED=$(echo "$ENV_DB_URL" | sed 's/:[^:@]*@/:***@/')
-            echo "✅ DATABASE_URL verified in task overrides: $ENV_DB_URL_MASKED"
-          else
-            echo "❌ ERROR: DATABASE_URL not found in task overrides JSON"
-            exit 1
-          fi
-          echo ""
-          
-          CONNECTION_TEST_TASK_ARN=$(aws ecs run-task \
-            --cluster "$CLUSTER_NAME" \
-            --task-definition "$TASK_DEFINITION" \
-            --launch-type FARGATE \
-            --network-configuration "$NETWORK_CONFIG_JSON" \
-            --overrides "$OVERRIDES_JSON" \
-            --query 'tasks[0].taskArn' \
-            --output text)
-          
-          if [ -z "$CONNECTION_TEST_TASK_ARN" ] || [ "$CONNECTION_TEST_TASK_ARN" == "None" ]; then
-            echo "ERROR: Failed to start database connection test task"
-            exit 1
-          fi
-          
-          echo "Connection test task started: $CONNECTION_TEST_TASK_ARN"
-          echo "Waiting for connection test to complete..."
-          
-          # Wait for task to complete (max 5 minutes, check every 5 seconds)
-          MAX_WAIT=300  # 5 minutes in seconds
-          ELAPSED=0
-          TASK_STOPPED=false
-          
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            TASK_STATUS=$(aws ecs describe-tasks \
-              --cluster "$CLUSTER_NAME" \
-              --tasks "$CONNECTION_TEST_TASK_ARN" \
-              --query 'tasks[0].lastStatus' \
-              --output text 2>/dev/null || echo "UNKNOWN")
-            
-            if [ "$TASK_STATUS" == "STOPPED" ]; then
-              echo "Connection test task completed"
-              TASK_STOPPED=true
-              break
-            fi
-            
-            if [ "$TASK_STATUS" == "UNKNOWN" ] || [ -z "$TASK_STATUS" ]; then
-              echo "Warning: Could not determine task status, retrying..."
-            else
-              echo "Task status: $TASK_STATUS (waiting...)"
-            fi
-            
-            sleep 5
-            ELAPSED=$((ELAPSED + 5))
-          done
-          
-          if [ "$TASK_STOPPED" == "false" ]; then
-            echo "WARNING: Timeout waiting for connection test task to complete after ${MAX_WAIT} seconds"
-          fi
-          
-          # Get connection test exit code
-          CONNECTION_EXIT_CODE=$(aws ecs describe-tasks \
-            --cluster "$CLUSTER_NAME" \
-            --tasks "$CONNECTION_TEST_TASK_ARN" \
-            --query 'tasks[0].containers[0].exitCode' \
-            --output text 2>/dev/null || echo "null")
-          
-          # Get task stop reason for debugging
-          STOP_REASON=$(aws ecs describe-tasks \
-            --cluster "$CLUSTER_NAME" \
-            --tasks "$CONNECTION_TEST_TASK_ARN" \
-            --query 'tasks[0].stoppedReason' \
-            --output text 2>/dev/null || echo "N/A")
-          
-          echo "Connection test exit code: $CONNECTION_EXIT_CODE"
-          echo "Task stop reason: $STOP_REASON"
-          
-          # Get connection test logs
-          LOG_GROUP="/ecs/${STAGE}-flowgenie-worker"
-          TASK_ID=$(echo "$CONNECTION_TEST_TASK_ARN" | awk -F'/' '{print $3}')
-          
-          echo "Fetching connection test logs for task: $TASK_ID..."
-          echo "Log group: $LOG_GROUP"
-          
-          # Try to get logs from the specific task stream
-          LOG_STREAM="ecs/worker/$TASK_ID"
-          if aws logs tail "$LOG_GROUP" --log-stream-names "$LOG_STREAM" --format short --since 10m 2>/dev/null; then
-            echo "Logs retrieved successfully"
-          else
-            echo "Could not fetch logs from stream $LOG_STREAM, trying recent logs..."
-            aws logs tail "$LOG_GROUP" --format short --since 10m 2>/dev/null | tail -50 || echo "Could not fetch logs"
-          fi
-          
-          # Check exit code - exit code 0 means success, null might mean task is still running or failed to start
-          if [ "$CONNECTION_EXIT_CODE" != "0" ]; then
-            if [ "$CONNECTION_EXIT_CODE" == "null" ]; then
-              echo "WARNING: Could not determine exit code - task may not have started properly"
-            fi
-            echo "❌ ERROR: Database connection test failed with exit code: $CONNECTION_EXIT_CODE"
-            echo "Task ARN: $CONNECTION_TEST_TASK_ARN"
-            echo "Database endpoint: ${{ steps.get-db.outputs.rds_endpoint }}"
-            echo ""
-            echo "Possible causes:"
-            echo "1. Security group rules: ECS task security group may not allow outbound to RDS"
-            echo "2. RDS security group: RDS security group may not allow inbound from ECS task security group"
-            echo "3. Network configuration: Task may not be in the correct VPC/subnet"
-            echo "4. Database credentials: Username/password may be incorrect"
-            echo "5. Database endpoint: RDS instance may not be accessible"
-            echo ""
-            echo "Please check CloudWatch logs in log group: $LOG_GROUP"
-            echo "Please verify security group rules and network configuration"
-            exit 1
-          fi
-          
-          echo "✅ Database connection test passed successfully"
-          echo ""
-          
-          # Run ECS task with override command to run migrations
-          echo "Starting migration task..."
-          
-          # Create migration overrides JSON using jq
+          # Run migrations
+          echo "Running database migrations..."
           MIGRATION_OVERRIDES_JSON=$(jq -n \
             --arg container_name "worker" \
             --arg db_url "$DATABASE_URL" \
@@ -558,7 +198,7 @@ jobs:
             '{
               containerOverrides: [{
                 name: $container_name,
-                command: ["sh", "-c", "npx prisma migrate deploy"],
+                command: ["sh", "-c", "cd /app && npx prisma migrate deploy"],
                 environment: [
                   {name: "DATABASE_URL", value: $db_url},
                   {name: "STAGE", value: $stage},
@@ -582,13 +222,11 @@ jobs:
           fi
           
           echo "Migration task started: $TASK_ARN"
-          echo "Waiting for task to complete..."
+          echo "Waiting for completion..."
           
-          # Wait for migration task to complete (max 10 minutes, check every 5 seconds)
-          MAX_WAIT=600  # 10 minutes in seconds
+          # Wait for task to complete
+          MAX_WAIT=600
           ELAPSED=0
-          MIGRATION_TASK_STOPPED=false
-          
           while [ $ELAPSED -lt $MAX_WAIT ]; do
             TASK_STATUS=$(aws ecs describe-tasks \
               --cluster "$CLUSTER_NAME" \
@@ -597,70 +235,31 @@ jobs:
               --output text 2>/dev/null || echo "UNKNOWN")
             
             if [ "$TASK_STATUS" == "STOPPED" ]; then
-              echo "Migration task completed"
-              MIGRATION_TASK_STOPPED=true
               break
             fi
-            
-            if [ "$TASK_STATUS" == "UNKNOWN" ] || [ -z "$TASK_STATUS" ]; then
-              echo "Warning: Could not determine task status, retrying..."
-            else
-              echo "Task status: $TASK_STATUS (waiting...)"
-            fi
-            
             sleep 5
             ELAPSED=$((ELAPSED + 5))
           done
           
-          if [ "$MIGRATION_TASK_STOPPED" == "false" ]; then
-            echo "WARNING: Timeout waiting for migration task to complete after ${MAX_WAIT} seconds"
-          fi
-          
-          # Get task exit code
+          # Get exit code
           EXIT_CODE=$(aws ecs describe-tasks \
             --cluster "$CLUSTER_NAME" \
             --tasks "$TASK_ARN" \
             --query 'tasks[0].containers[0].exitCode' \
             --output text 2>/dev/null || echo "null")
           
-          # Get task stop reason for debugging
-          STOP_REASON=$(aws ecs describe-tasks \
-            --cluster "$CLUSTER_NAME" \
-            --tasks "$TASK_ARN" \
-            --query 'tasks[0].stoppedReason' \
-            --output text 2>/dev/null || echo "N/A")
-          
-          echo "Migration exit code: $EXIT_CODE"
-          echo "Task stop reason: $STOP_REASON"
-          
-          # Get task logs
+          # Get logs
           LOG_GROUP="/ecs/${STAGE}-flowgenie-worker"
           TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $3}')
-          
-          echo "Fetching migration logs for task: $TASK_ID..."
-          echo "Log group: $LOG_GROUP"
-          
-          # Try to get logs from the specific task stream
           LOG_STREAM="ecs/worker/$TASK_ID"
-          if aws logs tail "$LOG_GROUP" --log-stream-names "$LOG_STREAM" --format short --since 10m 2>/dev/null; then
-            echo "Logs retrieved successfully"
-          else
-            echo "Could not fetch logs from stream $LOG_STREAM, trying recent logs..."
-            aws logs tail "$LOG_GROUP" --format short --since 10m 2>/dev/null | tail -50 || echo "Could not fetch logs"
-          fi
+          aws logs tail "$LOG_GROUP" --log-stream-names "$LOG_STREAM" --format short --since 10m 2>/dev/null | tail -50 || echo "Could not fetch logs"
           
-          # Check exit code
-          if [ "$EXIT_CODE" != "0" ]; then
-            if [ "$EXIT_CODE" == "null" ]; then
-              echo "WARNING: Could not determine exit code - task may not have started properly"
-            fi
-            echo "ERROR: Database migration failed with exit code: $EXIT_CODE"
-            echo "Task ARN: $TASK_ARN"
-            echo "Please check CloudWatch logs in log group: $LOG_GROUP"
+          if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "null" ]; then
+            echo "ERROR: Migration failed with exit code: $EXIT_CODE"
             exit 1
           fi
           
-          echo "Database migrations completed successfully"
+          echo "✅ Database migrations completed successfully"
 
       - name: Create Lambda deployment package
         working-directory: ./backend
