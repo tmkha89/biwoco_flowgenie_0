@@ -84,6 +84,12 @@ variable "environment_variables" {
   sensitive   = true
 }
 
+variable "use_fargate_spot" {
+  description = "Use Fargate Spot for cost savings (optional)"
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   description = "Tags to apply to resources"
   type        = map(string)

@@ -2,6 +2,9 @@ name: Infrastructure Deployment
 
 on:
   workflow_dispatch:
+    branches:
+      - main
+      - features/pipeline_backend
     inputs:
       stage:
         description: 'Deployment stage (dev/staging/prod)'

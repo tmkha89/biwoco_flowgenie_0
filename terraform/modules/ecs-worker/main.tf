@@ -152,13 +152,36 @@ resource "aws_ecs_task_definition" "worker" {
   )
 }
 
+# Associate Fargate Spot capacity provider with cluster (optional, for cost savings)
+resource "aws_ecs_cluster_capacity_providers" "main" {
+  count              = var.use_fargate_spot ? 1 : 0
+  cluster_name       = aws_ecs_cluster.main.name
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
+
+  default_capacity_provider_strategy {
+    capacity_provider = "FARGATE_SPOT"
+    weight            = 100
+  }
+}
+
 # ECS Service
 resource "aws_ecs_service" "worker" {
   name            = "${var.stage}-flowgenie-worker"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.worker.arn
   desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+
+  # Use capacity provider strategy if Fargate Spot is enabled, otherwise use launch_type
+  dynamic "capacity_provider_strategy" {
+    for_each = var.use_fargate_spot ? [1] : []
+    content {
+      capacity_provider = "FARGATE_SPOT"
+      weight            = 100
+      base              = 0
+    }
+  }
+
+  launch_type = var.use_fargate_spot ? null : "FARGATE"
 
   network_configuration {
     subnets          = var.subnet_ids
@@ -172,5 +195,7 @@ resource "aws_ecs_service" "worker" {
       Name = "${var.stage}-flowgenie-worker-service"
     }
   )
+
+  depends_on = var.use_fargate_spot ? [aws_ecs_cluster_capacity_providers.main[0]] : []
 }
 

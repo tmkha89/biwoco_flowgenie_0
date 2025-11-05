@@ -68,7 +68,7 @@ variable "lambda_deployment_package" {
 variable "lambda_handler" {
   description = "Lambda handler"
   type        = string
-  default     = "index.handler"
+  default     = "lambda.handler"
 }
 
 variable "lambda_runtime" {

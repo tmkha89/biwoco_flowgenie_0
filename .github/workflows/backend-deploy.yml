@@ -1,0 +1,423 @@
+name: Deploy Backend, Worker, and Redis Cache
+
+on:
+  push:
+    branches:
+      - main
+      - features/pipeline_backend
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Deployment stage (dev/staging/prod)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+  STAGE: ${{ inputs.stage || 'dev' }}
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  # Deploy Lambda Backend
+  deploy-lambda:
+    name: Deploy Lambda Backend
+    runs-on: ubuntu-latest
+    environment: ${{ env.STAGE }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          echo "Installing backend dependencies..."
+          npm ci
+          echo "Dependencies installed successfully"
+
+      - name: Build backend
+        working-directory: ./backend
+        env:
+          NODE_ENV: production
+        run: |
+          echo "Building backend application..."
+          npm run build
+          
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo "ERROR: Build completed but dist folder is empty or missing"
+            exit 1
+          fi
+          echo "Build completed successfully"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get database connection details
+        id: get-db
+        run: |
+          STAGE="${{ env.STAGE }}"
+          DB_IDENTIFIER="${STAGE}-flowgenie-db"
+          
+          echo "Getting database connection details for: $DB_IDENTIFIER"
+          
+          # Get RDS endpoint
+          RDS_ENDPOINT=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --query 'DBInstances[0].Endpoint.Address' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" == "None" ]; then
+            echo "ERROR: RDS instance '$DB_IDENTIFIER' not found"
+            echo "Please ensure the database is deployed via Terraform"
+            exit 1
+          fi
+          
+          # Get database name and username (from RDS instance)
+          DB_NAME=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --query 'DBInstances[0].DBName' \
+            --output text 2>/dev/null || echo "flowgenie_db")
+          
+          DB_USERNAME=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --query 'DBInstances[0].MasterUsername' \
+            --output text 2>/dev/null || echo "flowgenie_admin")
+          
+          # Determine secret name based on stage
+          if [ "$STAGE" == "prod" ]; then
+            DB_SECRET_NAME="DB_PASSWORD_PROD"
+          elif [ "$STAGE" == "staging" ]; then
+            DB_SECRET_NAME="DB_PASSWORD_STAGING"
+          else
+            DB_SECRET_NAME="DB_PASSWORD_DEV"
+          fi
+          
+          echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "db_name=${DB_NAME:-flowgenie_db}" >> $GITHUB_OUTPUT
+          echo "db_username=${DB_USERNAME:-flowgenie_admin}" >> $GITHUB_OUTPUT
+          echo "db_secret_name=$DB_SECRET_NAME" >> $GITHUB_OUTPUT
+          
+          echo "Database endpoint: $RDS_ENDPOINT"
+          echo "Database name: ${DB_NAME:-flowgenie_db}"
+          echo "Database username: ${DB_USERNAME:-flowgenie_admin}"
+          echo "Database secret name: $DB_SECRET_NAME"
+
+      - name: Run database migrations
+        id: run-migrations
+        working-directory: ./backend
+        env:
+          DB_PASSWORD_DEV: ${{ secrets.DB_PASSWORD_DEV }}
+          DB_PASSWORD_STAGING: ${{ secrets.DB_PASSWORD_STAGING }}
+          DB_PASSWORD_PROD: ${{ secrets.DB_PASSWORD_PROD }}
+        run: |
+          # Get the correct password based on stage
+          STAGE="${{ env.STAGE }}"
+          if [ "$STAGE" == "prod" ]; then
+            DB_PASSWORD="$DB_PASSWORD_PROD"
+          elif [ "$STAGE" == "staging" ]; then
+            DB_PASSWORD="$DB_PASSWORD_STAGING"
+          else
+            DB_PASSWORD="$DB_PASSWORD_DEV"
+          fi
+          
+          # Construct DATABASE_URL
+          DATABASE_URL="postgresql://${{ steps.get-db.outputs.db_username }}:${DB_PASSWORD}@${{ steps.get-db.outputs.rds_endpoint }}:5432/${{ steps.get-db.outputs.db_name }}"
+          
+          export DATABASE_URL
+          
+          echo "Running database migrations..."
+          
+          # Generate Prisma Client if needed
+          npx prisma generate
+          
+          # Run migrations
+          if ! npx prisma migrate deploy; then
+            echo "ERROR: Database migration failed"
+            echo "Please check the migration logs above for details"
+            exit 1
+          fi
+          
+          echo "Database migrations completed successfully"
+
+      - name: Create Lambda deployment package
+        working-directory: ./backend
+        run: |
+          echo "Creating Lambda deployment package..."
+          
+          # Create package directory
+          mkdir -p lambda-package
+          
+          # Copy built files
+          cp -r dist/* lambda-package/
+          
+          # Copy package.json and install production dependencies
+          cp package.json package-lock.json lambda-package/
+          cd lambda-package
+          npm ci --omit=dev --production
+          
+          # Copy Prisma generated client if exists
+          if [ -d "../node_modules/.prisma" ]; then
+            mkdir -p node_modules/.prisma
+            cp -r ../node_modules/.prisma/* node_modules/.prisma/
+          fi
+          
+          # Create zip file
+          cd ..
+          zip -r lambda-api.zip lambda-package/ -x "*.git*" "*.md" "*.test.*"
+          
+          ZIP_SIZE=$(ls -lh lambda-api.zip | awk '{print $5}')
+          echo "Lambda package created successfully (size: $ZIP_SIZE)"
+
+      - name: Get Lambda function name
+        id: get-lambda
+        run: |
+          FUNCTION_NAME="${{ env.STAGE }}-flowgenie-api"
+          echo "lambda_function_name=$FUNCTION_NAME" >> $GITHUB_OUTPUT
+          echo "Target Lambda function: $FUNCTION_NAME"
+
+      - name: Update Lambda function code
+        working-directory: ./backend
+        run: |
+          FUNCTION_NAME="${{ steps.get-lambda.outputs.lambda_function_name }}"
+          
+          echo "Updating Lambda function code..."
+          
+          # Check if function exists
+          if ! aws lambda get-function --function-name "$FUNCTION_NAME" >/dev/null 2>&1; then
+            echo "ERROR: Lambda function '$FUNCTION_NAME' does not exist"
+            echo "Please run infrastructure deployment first (infra-deploy workflow)"
+            exit 1
+          fi
+          
+          # Update function code
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --zip-file fileb://lambda-api.zip \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "Lambda function code updated successfully"
+
+      - name: Wait for Lambda update
+        run: |
+          FUNCTION_NAME="${{ steps.get-lambda.outputs.lambda_function_name }}"
+          
+          echo "Waiting for Lambda function to be ready..."
+          aws lambda wait function-updated \
+            --function-name "$FUNCTION_NAME" \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "Lambda function is ready"
+
+      - name: Lambda Deployment Summary
+        run: |
+          FUNCTION_NAME="${{ steps.get-lambda.outputs.lambda_function_name }}"
+          
+          echo "## Lambda Backend Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Function Name:** $FUNCTION_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Database:** ${{ steps.get-db.outputs.db_name }}@${{ steps.get-db.outputs.rds_endpoint }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Database migrations completed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Lambda backend has been successfully deployed!" >> $GITHUB_STEP_SUMMARY
+
+  # Build and Deploy Worker to ECS
+  deploy-worker:
+    name: Build and Deploy Worker to ECS
+    runs-on: ubuntu-latest
+    environment: ${{ env.STAGE }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get ECR repository URI
+        id: get-ecr
+        run: |
+          STAGE="${{ env.STAGE }}"
+          REPO_NAME="${STAGE}-flowgenie-worker"
+          
+          # Get repository URI
+          REPO_URI=$(aws ecr describe-repositories \
+            --repository-names "$REPO_NAME" \
+            --query 'repositories[0].repositoryUri' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$REPO_URI" ] || [ "$REPO_URI" == "None" ]; then
+            echo "ERROR: ECR repository '$REPO_NAME' does not exist"
+            echo "Please run infrastructure deployment first (infra-deploy workflow)"
+            exit 1
+          fi
+          
+          echo "ecr_repository=$REPO_NAME" >> $GITHUB_OUTPUT
+          echo "ecr_repository_uri=$REPO_URI" >> $GITHUB_OUTPUT
+          echo "ECR Repository: $REPO_URI"
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        working-directory: ./backend
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ECR_REPOSITORY: ${{ steps.get-ecr.outputs.ecr_repository_uri }}
+        run: |
+          echo "Building Docker image for worker..."
+          
+          docker build \
+            -f Dockerfile.worker \
+            -t "$ECR_REPOSITORY:$IMAGE_TAG" \
+            -t "$ECR_REPOSITORY:latest" \
+            .
+          
+          echo "Pushing Docker image to ECR..."
+          docker push "$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "$ECR_REPOSITORY:latest"
+          
+          echo "Docker image pushed successfully"
+
+      - name: Get ECS cluster and service names
+        id: get-ecs
+        run: |
+          STAGE="${{ env.STAGE }}"
+          CLUSTER_NAME="${STAGE}-flowgenie-worker"
+          SERVICE_NAME="${STAGE}-flowgenie-worker"
+          
+          echo "ecs_cluster=$CLUSTER_NAME" >> $GITHUB_OUTPUT
+          echo "ecs_service=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "ECS Cluster: $CLUSTER_NAME"
+          echo "ECS Service: $SERVICE_NAME"
+
+      - name: Force new ECS deployment
+        run: |
+          CLUSTER_NAME="${{ steps.get-ecs.outputs.ecs_cluster }}"
+          SERVICE_NAME="${{ steps.get-ecs.outputs.ecs_service }}"
+          
+          echo "Forcing new ECS deployment..."
+          
+          # Check if service exists
+          if ! aws ecs describe-services \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
+            --query 'services[0].serviceName' \
+            --output text 2>&1 | grep -q "$SERVICE_NAME"; then
+            echo "ERROR: ECS service '$SERVICE_NAME' does not exist"
+            echo "Please run infrastructure deployment first (infra-deploy workflow)"
+            exit 1
+          fi
+          
+          # Force new deployment
+          aws ecs update-service \
+            --cluster "$CLUSTER_NAME" \
+            --service "$SERVICE_NAME" \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "ECS deployment initiated"
+
+      - name: Wait for ECS deployment to complete
+        run: |
+          CLUSTER_NAME="${{ steps.get-ecs.outputs.ecs_cluster }}"
+          SERVICE_NAME="${{ steps.get-ecs.outputs.ecs_service }}"
+          
+          echo "Waiting for ECS deployment to stabilize..."
+          
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "ECS deployment completed successfully"
+
+      - name: Worker Deployment Summary
+        run: |
+          echo "## Worker ECS Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster:** ${{ steps.get-ecs.outputs.ecs_cluster }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** ${{ steps.get-ecs.outputs.ecs_service }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ steps.get-ecr.outputs.ecr_repository_uri }}:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Worker has been successfully deployed to ECS!" >> $GITHUB_STEP_SUMMARY
+
+  # Verify Redis Cache
+  verify-redis:
+    name: Verify Redis Cache Infrastructure
+    runs-on: ubuntu-latest
+    environment: ${{ env.STAGE }}
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify Redis cluster exists
+        run: |
+          STAGE="${{ env.STAGE }}"
+          REPLICATION_GROUP_ID="${STAGE}-flowgenie-redis"
+          
+          echo "Verifying Redis cluster: $REPLICATION_GROUP_ID"
+          
+          REDIS_STATUS=$(aws elasticache describe-replication-groups \
+            --replication-group-id "$REPLICATION_GROUP_ID" \
+            --query 'ReplicationGroups[0].Status' \
+            --output text 2>&1 || echo "NOT_FOUND")
+          
+          if [ "$REDIS_STATUS" == "NOT_FOUND" ] || [ -z "$REDIS_STATUS" ] || [ "$REDIS_STATUS" == "None" ]; then
+            echo "ERROR: Redis cluster '$REPLICATION_GROUP_ID' does not exist"
+            echo "Please run infrastructure deployment first (infra-deploy workflow)"
+            exit 1
+          fi
+          
+          echo "Redis cluster status: $REDIS_STATUS"
+          
+          if [ "$REDIS_STATUS" != "available" ]; then
+            echo "WARNING: Redis cluster is not in 'available' state"
+            echo "Current status: $REDIS_STATUS"
+          else
+            echo "Redis cluster is available"
+          fi
+
+      - name: Redis Verification Summary
+        run: |
+          echo "## Redis Cache Verification Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Redis Cluster:** ${{ env.STAGE }}-flowgenie-redis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Redis cache infrastructure verified!" >> $GITHUB_STEP_SUMMARY
