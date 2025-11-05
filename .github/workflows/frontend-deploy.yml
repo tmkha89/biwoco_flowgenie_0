@@ -188,6 +188,66 @@ jobs:
           echo "amplify_branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "Deploying to branch: $BRANCH_NAME"
 
+      - name: Check and Create Amplify Branch
+        id: check-branch
+        run: |
+          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
+          BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
+          
+          echo "🔍 Checking if branch '$BRANCH_NAME' exists in Amplify app..."
+          
+          # Check if branch exists
+          BRANCH_CHECK=$(aws amplify get-branch \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --query 'branch.branchName' \
+            --output text 2>&1)
+          BRANCH_CHECK_EXIT_CODE=$?
+          
+          if [ $BRANCH_CHECK_EXIT_CODE -eq 0 ] && [ "$BRANCH_CHECK" == "$BRANCH_NAME" ]; then
+            echo "✅ Branch '$BRANCH_NAME' already exists in Amplify app"
+            echo "branch_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Branch '$BRANCH_NAME' does not exist in Amplify app"
+            echo "Creating branch '$BRANCH_NAME'..."
+            
+            # Create the branch
+            CREATE_BRANCH_RESPONSE=$(aws amplify create-branch \
+              --app-id "$APP_ID" \
+              --branch-name "$BRANCH_NAME" \
+              --enable-auto-build \
+              --output json 2>&1)
+            CREATE_BRANCH_EXIT_CODE=$?
+            
+            if [ $CREATE_BRANCH_EXIT_CODE -ne 0 ]; then
+              echo ""
+              echo "❌ ERROR: Failed to create branch '$BRANCH_NAME'"
+              echo "Exit code: $CREATE_BRANCH_EXIT_CODE"
+              echo "AWS CLI Error: $CREATE_BRANCH_RESPONSE"
+              echo ""
+              echo "Possible causes:"
+              echo "  1. AWS credentials don't have permission to create branches"
+              echo "  2. Branch name conflict (unlikely if check failed)"
+              echo "  3. Invalid app ID"
+              echo ""
+              echo "Fix: Ensure AWS credentials have 'amplify:CreateBranch' permission"
+              exit 1
+            fi
+            
+            CREATED_BRANCH=$(echo "$CREATE_BRANCH_RESPONSE" | jq -r '.branch.branchName' 2>/dev/null)
+            if [ "$CREATED_BRANCH" == "$BRANCH_NAME" ]; then
+              echo "✅ Successfully created branch '$BRANCH_NAME'"
+              echo "branch_exists=false" >> $GITHUB_OUTPUT
+            else
+              echo ""
+              echo "❌ ERROR: Branch creation response unexpected"
+              echo "Expected: $BRANCH_NAME"
+              echo "Received: $CREATED_BRANCH"
+              echo "Full response: $CREATE_BRANCH_RESPONSE"
+              exit 1
+            fi
+          fi
+
       - name: Create and Start Amplify Deployment
         id: start-deployment
         working-directory: ./frontend
@@ -222,26 +282,28 @@ jobs:
             else
               echo "Could not start job (exit code: $JOB_EXIT_CODE), using deployment API instead..."
               echo "Error output: $JOB_OUTPUT"
-            fi
-            
-            # Use deployment API
-            echo "Creating deployment..."
-            DEPLOYMENT_RESPONSE=$(aws amplify create-deployment \
-              --app-id "$APP_ID" \
-              --branch-name "$BRANCH_NAME" \
-                             --output json 2>&1)
-             DEPLOYMENT_EXIT_CODE=$?
-             
-             if [ $DEPLOYMENT_EXIT_CODE -ne 0 ]; then
-               echo ""
-               echo "❌ ERROR: Failed to create deployment"
+                                        fi
+              
+              # Use deployment API
+              echo "Creating deployment..."
+              DEPLOYMENT_RESPONSE=$(aws amplify create-deployment \
+                --app-id "$APP_ID" \
+                --branch-name "$BRANCH_NAME" \
+                --output json 2>&1)
+              DEPLOYMENT_EXIT_CODE=$?
+              
+              if [ $DEPLOYMENT_EXIT_CODE -ne 0 ]; then
+                                echo ""
+                echo "❌ ERROR: Failed to create deployment"
                 echo "Exit code: $DEPLOYMENT_EXIT_CODE"
                 echo "AWS CLI Error: $DEPLOYMENT_RESPONSE"
                 echo ""
                 echo "Possible causes:"
                 echo "  1. Invalid app ID or branch name"
-                echo "  2. AWS credentials don't have Amplify permissions"
-                echo "  3. Branch '${BRANCH_NAME}' doesn't exist in Amplify app"
+                echo "  2. AWS credentials don't have Amplify deployment permissions"
+                echo "  3. Branch '${BRANCH_NAME}' was just created but not ready yet (unlikely)"
+                echo ""
+                echo "Note: Branch should have been auto-created in the previous step"
                 exit 1
               fi
               
