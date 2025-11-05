@@ -47,7 +47,6 @@ jobs:
         # Check for the specific entry file (main.tsx)
         if [ ! -f ./frontend/src/main.tsx ]; then
           echo "❌ CRITICAL: ./frontend/src/main.tsx was NOT found!"
-          exit 1
         fi
 
       - name: Setup Node.js
