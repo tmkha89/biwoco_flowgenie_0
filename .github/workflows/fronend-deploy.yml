@@ -34,6 +34,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: 🔎 DEBUG: List Frontend Files
+      run: |
+        # List the contents of the 'frontend' directory
+        echo "Listing contents of ./frontend/"
+        ls -al ./frontend/
+        
+        # List the contents of the 'src' directory (where the error is happening)
+        echo "Listing contents of ./frontend/src/"
+        ls -al ./frontend/src/
+        
+        # Check for the specific entry file (main.tsx)
+        if [ ! -f ./frontend/src/main.tsx ]; then
+          echo "❌ CRITICAL: ./frontend/src/main.tsx was NOT found!"
+          exit 1
+        fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
