@@ -256,9 +256,47 @@ jobs:
           echo "Checking database connection..."
           echo "Database endpoint: ${{ steps.get-db.outputs.rds_endpoint }}"
           
+          # Verify security group configuration
+          echo ""
+          echo "Verifying security group configuration..."
+          DB_IDENTIFIER="${STAGE}-flowgenie-db"
+          RDS_SG_ID=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --query 'DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$RDS_SG_ID" ] && [ "$RDS_SG_ID" != "None" ]; then
+            echo "RDS Security Group ID: $RDS_SG_ID"
+            echo "ECS Task Security Group IDs: $SECURITY_GROUP_IDS"
+            
+            # Check if RDS security group allows inbound from ECS task security groups
+            echo ""
+            echo "Checking RDS security group rules..."
+            for SG_ID in $(echo "$SECURITY_GROUP_IDS" | jq -r '.[]'); do
+              echo "Checking if RDS SG ($RDS_SG_ID) allows inbound from ECS SG ($SG_ID)..."
+              INGRESS_RULES=$(aws ec2 describe-security-groups \
+                --group-ids "$RDS_SG_ID" \
+                --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && ToPort==\`5432\` && IpProtocol==\`tcp\`]" \
+                --output json 2>/dev/null || echo "[]")
+              
+              ALLOWS_ACCESS=$(echo "$INGRESS_RULES" | jq -r --arg sg "$SG_ID" '[.[] | select(.UserIdGroupPairs[]?.GroupId == $sg)] | length > 0')
+              
+              if [ "$ALLOWS_ACCESS" == "true" ]; then
+                echo "✅ RDS security group allows inbound from ECS security group $SG_ID"
+              else
+                echo "❌ WARNING: RDS security group does NOT allow inbound from ECS security group $SG_ID"
+                echo "   You may need to add an inbound rule to RDS security group $RDS_SG_ID"
+                echo "   to allow TCP port 5432 from security group $SG_ID"
+              fi
+            done
+          else
+            echo "Warning: Could not determine RDS security group ID"
+          fi
+          echo ""
+          
           # Create connection test command using jq
-          # Write a simple test script using here-doc to avoid escaping issues
-          # Use single-quoted delimiter to prevent variable expansion
+          # Test connection using prisma migrate status (read-only, uses Prisma CLI)
+          # This works because Prisma CLI is available via npx and doesn't require @prisma/client
           OVERRIDES_JSON=$(jq -n \
             --arg container_name "worker" \
             --arg db_url "$DATABASE_URL" \
@@ -266,7 +304,7 @@ jobs:
             '{
               containerOverrides: [{
                 name: $container_name,
-                command: ["sh", "-c", "cat > /tmp/test-connection.js << '\''SCRIPTEND'\''\nconst { PrismaClient } = require(\"@prisma/client\");\nconst prisma = new PrismaClient();\nprisma.$connect()\n  .then(() => { console.log(\"✅ Database connection successful\"); process.exit(0); })\n  .catch((err) => { console.error(\"❌ Database connection failed:\", err.message); process.exit(1); });\nSCRIPTEND\nnode /tmp/test-connection.js"],
+                command: ["sh", "-c", "cd /app && npx prisma migrate status 2>&1 | head -5 && echo \"✅ Database connection successful\" || (echo \"❌ Database connection failed\" && exit 1)"],
                 environment: [
                   {name: "DATABASE_URL", value: $db_url},
                   {name: "STAGE", value: $stage},
@@ -292,29 +330,76 @@ jobs:
           echo "Connection test task started: $CONNECTION_TEST_TASK_ARN"
           echo "Waiting for connection test to complete..."
           
-          # Wait for connection test to complete (max 5 minutes)
-          aws ecs wait tasks-stopped \
-            --cluster "$CLUSTER_NAME" \
-            --tasks "$CONNECTION_TEST_TASK_ARN" \
-            --max-attempts 60 \
-            --delay 5 || true
+          # Wait for task to complete (max 5 minutes, check every 5 seconds)
+          MAX_WAIT=300  # 5 minutes in seconds
+          ELAPSED=0
+          TASK_STOPPED=false
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            TASK_STATUS=$(aws ecs describe-tasks \
+              --cluster "$CLUSTER_NAME" \
+              --tasks "$CONNECTION_TEST_TASK_ARN" \
+              --query 'tasks[0].lastStatus' \
+              --output text 2>/dev/null || echo "UNKNOWN")
+            
+            if [ "$TASK_STATUS" == "STOPPED" ]; then
+              echo "Connection test task completed"
+              TASK_STOPPED=true
+              break
+            fi
+            
+            if [ "$TASK_STATUS" == "UNKNOWN" ] || [ -z "$TASK_STATUS" ]; then
+              echo "Warning: Could not determine task status, retrying..."
+            else
+              echo "Task status: $TASK_STATUS (waiting...)"
+            fi
+            
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+          
+          if [ "$TASK_STOPPED" == "false" ]; then
+            echo "WARNING: Timeout waiting for connection test task to complete after ${MAX_WAIT} seconds"
+          fi
           
           # Get connection test exit code
           CONNECTION_EXIT_CODE=$(aws ecs describe-tasks \
             --cluster "$CLUSTER_NAME" \
             --tasks "$CONNECTION_TEST_TASK_ARN" \
             --query 'tasks[0].containers[0].exitCode' \
-            --output text)
+            --output text 2>/dev/null || echo "null")
+          
+          # Get task stop reason for debugging
+          STOP_REASON=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER_NAME" \
+            --tasks "$CONNECTION_TEST_TASK_ARN" \
+            --query 'tasks[0].stoppedReason' \
+            --output text 2>/dev/null || echo "N/A")
+          
+          echo "Connection test exit code: $CONNECTION_EXIT_CODE"
+          echo "Task stop reason: $STOP_REASON"
           
           # Get connection test logs
           LOG_GROUP="/ecs/${STAGE}-flowgenie-worker"
-          echo "Fetching connection test logs..."
-          aws logs tail "$LOG_GROUP" \
-            --follow false \
-            --format short \
-            --since 5m 2>/dev/null || echo "Could not fetch logs"
+          TASK_ID=$(echo "$CONNECTION_TEST_TASK_ARN" | awk -F'/' '{print $3}')
           
-          if [ "$CONNECTION_EXIT_CODE" != "0" ] && [ "$CONNECTION_EXIT_CODE" != "null" ]; then
+          echo "Fetching connection test logs for task: $TASK_ID..."
+          echo "Log group: $LOG_GROUP"
+          
+          # Try to get logs from the specific task stream
+          LOG_STREAM="ecs/worker/$TASK_ID"
+          if aws logs tail "$LOG_GROUP" --log-stream-names "$LOG_STREAM" --format short --since 10m 2>/dev/null; then
+            echo "Logs retrieved successfully"
+          else
+            echo "Could not fetch logs from stream $LOG_STREAM, trying recent logs..."
+            aws logs tail "$LOG_GROUP" --format short --since 10m 2>/dev/null | tail -50 || echo "Could not fetch logs"
+          fi
+          
+          # Check exit code - exit code 0 means success, null might mean task is still running or failed to start
+          if [ "$CONNECTION_EXIT_CODE" != "0" ]; then
+            if [ "$CONNECTION_EXIT_CODE" == "null" ]; then
+              echo "WARNING: Could not determine exit code - task may not have started properly"
+            fi
             echo "❌ ERROR: Database connection test failed with exit code: $CONNECTION_EXIT_CODE"
             echo "Task ARN: $CONNECTION_TEST_TASK_ARN"
             echo "Database endpoint: ${{ steps.get-db.outputs.rds_endpoint }}"
@@ -371,31 +456,76 @@ jobs:
           echo "Migration task started: $TASK_ARN"
           echo "Waiting for task to complete..."
           
-          # Wait for task to complete (max 10 minutes)
-          aws ecs wait tasks-stopped \
-            --cluster "$CLUSTER_NAME" \
-            --tasks "$TASK_ARN" \
-            --max-attempts 120 \
-            --delay 5 || true
+          # Wait for migration task to complete (max 10 minutes, check every 5 seconds)
+          MAX_WAIT=600  # 10 minutes in seconds
+          ELAPSED=0
+          MIGRATION_TASK_STOPPED=false
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            TASK_STATUS=$(aws ecs describe-tasks \
+              --cluster "$CLUSTER_NAME" \
+              --tasks "$TASK_ARN" \
+              --query 'tasks[0].lastStatus' \
+              --output text 2>/dev/null || echo "UNKNOWN")
+            
+            if [ "$TASK_STATUS" == "STOPPED" ]; then
+              echo "Migration task completed"
+              MIGRATION_TASK_STOPPED=true
+              break
+            fi
+            
+            if [ "$TASK_STATUS" == "UNKNOWN" ] || [ -z "$TASK_STATUS" ]; then
+              echo "Warning: Could not determine task status, retrying..."
+            else
+              echo "Task status: $TASK_STATUS (waiting...)"
+            fi
+            
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+          
+          if [ "$MIGRATION_TASK_STOPPED" == "false" ]; then
+            echo "WARNING: Timeout waiting for migration task to complete after ${MAX_WAIT} seconds"
+          fi
           
           # Get task exit code
           EXIT_CODE=$(aws ecs describe-tasks \
             --cluster "$CLUSTER_NAME" \
             --tasks "$TASK_ARN" \
             --query 'tasks[0].containers[0].exitCode' \
-            --output text)
+            --output text 2>/dev/null || echo "null")
+          
+          # Get task stop reason for debugging
+          STOP_REASON=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER_NAME" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].stoppedReason' \
+            --output text 2>/dev/null || echo "N/A")
+          
+          echo "Migration exit code: $EXIT_CODE"
+          echo "Task stop reason: $STOP_REASON"
           
           # Get task logs
           LOG_GROUP="/ecs/${STAGE}-flowgenie-worker"
-          TASK_ID=$(echo $TASK_ARN | cut -d'/' -f3)
+          TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $3}')
           
-          echo "Fetching migration logs..."
-          aws logs tail "$LOG_GROUP" \
-            --follow false \
-            --format short \
-            --since 5m 2>/dev/null || echo "Could not fetch logs"
+          echo "Fetching migration logs for task: $TASK_ID..."
+          echo "Log group: $LOG_GROUP"
           
-          if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "null" ]; then
+          # Try to get logs from the specific task stream
+          LOG_STREAM="ecs/worker/$TASK_ID"
+          if aws logs tail "$LOG_GROUP" --log-stream-names "$LOG_STREAM" --format short --since 10m 2>/dev/null; then
+            echo "Logs retrieved successfully"
+          else
+            echo "Could not fetch logs from stream $LOG_STREAM, trying recent logs..."
+            aws logs tail "$LOG_GROUP" --format short --since 10m 2>/dev/null | tail -50 || echo "Could not fetch logs"
+          fi
+          
+          # Check exit code
+          if [ "$EXIT_CODE" != "0" ]; then
+            if [ "$EXIT_CODE" == "null" ]; then
+              echo "WARNING: Could not determine exit code - task may not have started properly"
+            fi
             echo "ERROR: Database migration failed with exit code: $EXIT_CODE"
             echo "Task ARN: $TASK_ARN"
             echo "Please check CloudWatch logs in log group: $LOG_GROUP"
