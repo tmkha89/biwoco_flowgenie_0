@@ -31,7 +31,7 @@ jobs:
   deploy-lambda:
     name: Deploy Lambda Backend
     runs-on: ubuntu-latest
-    environment: ${{ env.STAGE }}
+    environment: ${{ inputs.stage || 'dev' }}
     
     steps:
       - name: Checkout code
@@ -246,7 +246,7 @@ jobs:
   deploy-worker:
     name: Build and Deploy Worker to ECS
     runs-on: ubuntu-latest
-    environment: ${{ env.STAGE }}
+    environment: ${{ inputs.stage || 'dev' }}
     
     steps:
       - name: Checkout code
@@ -376,7 +376,7 @@ jobs:
   verify-redis:
     name: Verify Redis Cache Infrastructure
     runs-on: ubuntu-latest
-    environment: ${{ env.STAGE }}
+    environment: ${{ inputs.stage || 'dev' }}
     
     steps:
       - name: Configure AWS credentials

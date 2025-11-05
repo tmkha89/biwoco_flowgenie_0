@@ -196,6 +196,6 @@ resource "aws_ecs_service" "worker" {
     }
   )
 
-  depends_on = var.use_fargate_spot ? [aws_ecs_cluster_capacity_providers.main[0]] : []
+  depends_on = var.use_fargate_spot ? [aws_ecs_cluster_capacity_providers.main[0]] : [aws_ecs_cluster.main]
 }
 
