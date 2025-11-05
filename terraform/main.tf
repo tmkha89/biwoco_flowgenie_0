@@ -136,15 +136,12 @@ module "elasticache" {
 #   }
 # }
 
-# App Runner Module for Backend
+# App Runner Module for Backend (using ECR Docker images)
 module "app_runner" {
   source = "./modules/app-runner"
 
   stage      = var.stage
   aws_region = var.aws_region
-
-  github_repository_url = var.amplify_repository_url != "" ? var.amplify_repository_url : "https://github.com/your-org/your-repo"
-  github_branch         = var.amplify_branch_name
 
   vpc_id             = module.vpc.vpc_id
   subnet_ids         = module.vpc.private_subnet_ids

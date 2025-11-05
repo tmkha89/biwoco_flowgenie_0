@@ -3,20 +3,11 @@ runtime: docker
 build:
   commands:
     build:
-      - echo "Building backend application..."
-      - cd backend
-      - npm ci
-      - npm run build
-      - echo "Build completed successfully"
+      - docker build -t apprunner-image -f backend/Dockerfile backend/
 run:
-  runtime-version: 20
-  command: cd backend && npm run start:prod
+  runtime-version: docker
+  command: docker run -p 3000:3000 apprunner-image
   network:
     port: 3000
     env: PORT
-  env:
-    - name: PORT
-      value: "3000"
-    - name: NODE_ENV
-      value: "production"
 

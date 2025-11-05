@@ -84,16 +84,6 @@ variable "auto_deploy_enabled" {
   default     = true
 }
 
-variable "github_repository_url" {
-  description = "GitHub repository URL (e.g., https://github.com/owner/repo)"
-  type        = string
-}
-
-variable "github_branch" {
-  description = "GitHub branch to deploy from"
-  type        = string
-  default     = "main"
-}
 
 variable "environment_variables" {
   description = "Additional environment variables for App Runner"

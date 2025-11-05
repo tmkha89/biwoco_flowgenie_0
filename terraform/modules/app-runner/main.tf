@@ -1,14 +1,48 @@
-# GitHub Connection for App Runner
-resource "aws_apprunner_connection" "github" {
-  connection_name = "${var.stage}-flowgenie-github-connection"
-  provider_type   = "GITHUB"
+# ECR Repository for Backend
+resource "aws_ecr_repository" "backend" {
+  name                 = "${var.stage}-flowgenie-backend"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
 
   tags = merge(
     var.tags,
     {
-      Name = "${var.stage}-flowgenie-github-connection"
+      Name = "${var.stage}-flowgenie-backend-ecr"
     }
   )
+}
+
+# IAM Role for App Runner to access ECR
+resource "aws_iam_role" "apprunner_access" {
+  name = "${var.stage}-apprunner-access-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "build.apprunner.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.stage}-apprunner-access-role"
+    }
+  )
+}
+
+resource "aws_iam_role_policy_attachment" "apprunner_access" {
+  role       = aws_iam_role.apprunner_access.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
 }
 
 # App Runner Service
@@ -18,24 +52,32 @@ resource "aws_apprunner_service" "backend" {
   source_configuration {
     auto_deployments_enabled = var.auto_deploy_enabled
 
-    code_repository {
-      repository_url = var.github_repository_url
-      source_code_version {
-        type  = "BRANCH"
-        value = var.github_branch
+    image_repository {
+      image_identifier      = "${aws_ecr_repository.backend.repository_url}:latest"
+      image_configuration {
+        port = var.container_port
+        runtime_environment_variables = merge(
+          {
+            PORT             = tostring(var.container_port)
+            NODE_ENV         = var.stage == "prod" ? "production" : var.stage
+            STAGE            = var.stage
+            DATABASE_URL     = "postgresql://${var.db_username}:${var.db_password}@${var.rds_endpoint}:5432/${var.db_name}"
+            REDIS_URL        = var.redis_endpoint != "" ? "redis://${var.redis_endpoint}:6379" : ""
+            REDIS_AUTH_TOKEN = var.redis_auth_token != "" ? var.redis_auth_token : ""
+          },
+          var.environment_variables
+        )
       }
-      code_configuration {
-        configuration_source = "REPOSITORY"
-      }
+      image_repository_type = "ECR"
     }
 
     authentication_configuration {
-      connection_arn = aws_apprunner_connection.github.arn
+      access_role_arn = aws_iam_role.apprunner_access.arn
     }
   }
 
   depends_on = [
-    aws_apprunner_connection.github,
+    aws_iam_role_policy_attachment.apprunner_access,
     aws_apprunner_vpc_connector.main
   ]
 

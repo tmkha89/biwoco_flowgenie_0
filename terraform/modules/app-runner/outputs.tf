@@ -28,13 +28,13 @@ output "vpc_connector_id" {
   value       = aws_apprunner_vpc_connector.main.id
 }
 
-output "github_connection_arn" {
-  description = "GitHub Connection ARN"
-  value       = aws_apprunner_connection.github.arn
+output "ecr_repository_url" {
+  description = "ECR Repository URL"
+  value       = aws_ecr_repository.backend.repository_url
 }
 
-output "github_connection_name" {
-  description = "GitHub Connection Name"
-  value       = aws_apprunner_connection.github.connection_name
+output "ecr_repository_arn" {
+  description = "ECR Repository ARN"
+  value       = aws_ecr_repository.backend.arn
 }
 

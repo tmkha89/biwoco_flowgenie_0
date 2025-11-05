@@ -36,9 +36,9 @@ output "app_runner_service_id" {
   value       = module.app_runner.service_id
 }
 
-output "app_runner_github_connection_arn" {
-  description = "App Runner GitHub Connection ARN"
-  value       = module.app_runner.github_connection_arn
+output "app_runner_ecr_repository_url" {
+  description = "App Runner ECR Repository URL"
+  value       = module.app_runner.ecr_repository_url
 }
 
 output "app_runner_vpc_connector_arn" {
