@@ -20,6 +20,7 @@ env:
   STAGE: ${{ inputs.stage || vars.STAGE || 'dev' }}
   db_password: ${{ secrets.DB_PASSWORD }}
   amplify_repository_url: ${{ vars.AMPLIFY_REPOSITORY_URL }}
+  devops_token: ${{ secrets.DEVOPS_TOKEN }}
   TF_VERSION: '1.13.4'
 
 jobs:
@@ -65,6 +66,7 @@ jobs:
             -var="aws_region=${{ env.AWS_REGION }}" \
             -var="db_password=${{ env.db_password }}" \
             -var="amplify_repository_url=${{ env.amplify_repository_url }}" \
+            -var="devops_token=${{ env.devops_token }}" \
             -out=tfplan
 
       - name: Terraform Apply
