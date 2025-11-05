@@ -61,7 +61,7 @@ resource "aws_lambda_function" "api" {
 
   # ECR Image URI (will be updated by CI/CD pipeline)
   # Use a placeholder image initially, or provide the actual ECR image URI
-  image_uri = var.lambda_image_uri != "" ? var.lambda_image_uri : "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.stage}-flowgenie-func:latest"
+  image_uri = var.lambda_image_uri != "" ? var.lambda_image_uri : "228863541674.dkr.ecr.ap-southeast-1.amazonaws.com/dev-flowgenie-worker:bd7bc9de8d572f3d2b6a4b70eefc434fb84add27"
 
   vpc_config {
     subnet_ids         = var.subnet_ids
