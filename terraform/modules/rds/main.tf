@@ -44,7 +44,7 @@ resource "aws_security_group" "rds" {
 
 # RDS Parameter Group
 resource "aws_db_parameter_group" "main" {
-  family = "postgres15"
+  family = "postgres16"
   name   = "${var.stage}-rds-params"
 
   parameter {
