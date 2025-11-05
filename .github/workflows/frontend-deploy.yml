@@ -72,6 +72,18 @@ jobs:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID || '' }}
         run: npm run build
 
+      - name: Prepare deployment artifacts
+        working-directory: ./frontend
+        run: |
+          # Create a zip file of the dist folder for deployment
+          cd dist
+          zip -r ../deployment.zip .
+          cd ..
+          echo "Deployment zip created: $(ls -lh deployment.zip)"
+
+      - name: Install jq for JSON parsing
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -103,76 +115,169 @@ jobs:
           echo "amplify_branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "Deploying to branch: $BRANCH_NAME"
 
-      - name: Start Amplify Build
-        id: start-build
+      - name: Create and Start Amplify Deployment
+        id: start-deployment
+        working-directory: ./frontend
         run: |
           APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
           BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
           
-          echo "Starting Amplify build for app: $APP_ID, branch: $BRANCH_NAME"
+          echo "Creating deployment for app: $APP_ID, branch: $BRANCH_NAME"
           
-          # Start a new build
+          # Try to use start-job first (for apps connected to repository)
           JOB_ID=$(aws amplify start-job \
             --app-id "$APP_ID" \
             --branch-name "$BRANCH_NAME" \
             --job-type RELEASE \
             --query 'jobSummary.jobId' \
-            --output text)
+            --output text 2>&1) || JOB_ID=""
           
-          if [ -z "$JOB_ID" ]; then
-            echo "Failed to start Amplify build"
-            exit 1
-          fi
-          
-          echo "amplify_job_id=$JOB_ID" >> $GITHUB_OUTPUT
-          echo "Started Amplify build job: $JOB_ID"
-
-      - name: Wait for Amplify Build to Complete
-        run: |
-          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
-          BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
-          JOB_ID=${{ steps.start-build.outputs.amplify_job_id }}
-          
-          echo "Waiting for build job $JOB_ID to complete..."
-          
-          MAX_WAIT=1800  # 30 minutes
-          ELAPSED=0
-          SLEEP_INTERVAL=10
-          
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            STATUS=$(aws amplify get-job \
+          if [[ "$JOB_ID" == *"BadRequestException"* ]] || [[ "$JOB_ID" == *"not connected to a repository"* ]]; then
+            echo "App not connected to repository, using deployment API instead..."
+            
+            # Create a deployment
+            DEPLOYMENT_RESPONSE=$(aws amplify create-deployment \
               --app-id "$APP_ID" \
               --branch-name "$BRANCH_NAME" \
-              --job-id "$JOB_ID" \
-              --query 'job.summary.status' \
-              --output text)
+              --output json)
             
-            echo "Build status: $STATUS (Elapsed: ${ELAPSED}s)"
+            DEPLOYMENT_ID=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.jobSummary.jobId')
+            ZIP_UPLOAD_URL=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.zipUploadUrl')
             
-            if [ "$STATUS" = "SUCCEED" ]; then
-              echo "Build completed successfully!"
-              exit 0
-            elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
-              echo "Build failed with status: $STATUS"
-              
-              # Get build logs
-              echo "Fetching build logs..."
-              aws amplify get-job \
-                --app-id "$APP_ID" \
-                --branch-name "$BRANCH_NAME" \
-                --job-id "$JOB_ID" \
-                --query 'job.steps[*].[stepName,status,logUrl]' \
-                --output table || true
-              
+            if [ -z "$DEPLOYMENT_ID" ] || [ "$DEPLOYMENT_ID" == "null" ]; then
+              echo "Failed to create deployment"
+              echo "Response: $DEPLOYMENT_RESPONSE"
               exit 1
             fi
             
-            sleep $SLEEP_INTERVAL
-            ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
-          done
+            echo "Deployment ID: $DEPLOYMENT_ID"
+            echo "Uploading artifacts to: $ZIP_UPLOAD_URL"
+            
+            # Upload the zip file
+            curl -X PUT "$ZIP_UPLOAD_URL" \
+              --upload-file deployment.zip \
+              --header "Content-Type: application/zip"
+            
+            if [ $? -ne 0 ]; then
+              echo "Failed to upload deployment artifacts"
+              exit 1
+            fi
+            
+            echo "Artifacts uploaded successfully"
+            
+            # Start the deployment
+            START_RESPONSE=$(aws amplify start-deployment \
+              --app-id "$APP_ID" \
+              --branch-name "$BRANCH_NAME" \
+              --job-id "$DEPLOYMENT_ID" \
+              --output json)
+            
+            echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+            echo "deployment_type=deployment" >> $GITHUB_OUTPUT
+            echo "Started deployment: $DEPLOYMENT_ID"
+            
+          elif [ -z "$JOB_ID" ] || [[ "$JOB_ID" == *"error"* ]]; then
+            echo "Failed to start build or deployment"
+            echo "Error: $JOB_ID"
+            exit 1
+          else
+            echo "amplify_job_id=$JOB_ID" >> $GITHUB_OUTPUT
+            echo "deployment_type=job" >> $GITHUB_OUTPUT
+            echo "Started Amplify build job: $JOB_ID"
+          fi
+
+      - name: Wait for Amplify Deployment to Complete
+        run: |
+          APP_ID=${{ steps.get-amplify-app.outputs.amplify_app_id }}
+          BRANCH_NAME=${{ steps.get-branch.outputs.amplify_branch }}
+          DEPLOYMENT_TYPE=${{ steps.start-deployment.outputs.deployment_type }}
           
-          echo "Build timeout after ${MAX_WAIT} seconds"
-          exit 1
+          if [ "$DEPLOYMENT_TYPE" = "deployment" ]; then
+            DEPLOYMENT_ID=${{ steps.start-deployment.outputs.deployment_id }}
+            echo "Waiting for deployment $DEPLOYMENT_ID to complete..."
+            
+            MAX_WAIT=1800  # 30 minutes
+            ELAPSED=0
+            SLEEP_INTERVAL=10
+            
+            while [ $ELAPSED -lt $MAX_WAIT ]; do
+              STATUS=$(aws amplify get-job \
+                --app-id "$APP_ID" \
+                --branch-name "$BRANCH_NAME" \
+                --job-id "$DEPLOYMENT_ID" \
+                --query 'job.summary.status' \
+                --output text 2>/dev/null || echo "PENDING")
+              
+              echo "Deployment status: $STATUS (Elapsed: ${ELAPSED}s)"
+              
+              if [ "$STATUS" = "SUCCEED" ]; then
+                echo "Deployment completed successfully!"
+                exit 0
+              elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
+                echo "Deployment failed with status: $STATUS"
+                
+                # Get deployment logs
+                echo "Fetching deployment logs..."
+                aws amplify get-job \
+                  --app-id "$APP_ID" \
+                  --branch-name "$BRANCH_NAME" \
+                  --job-id "$DEPLOYMENT_ID" \
+                  --query 'job.steps[*].[stepName,status,logUrl]' \
+                  --output table || true
+                
+                exit 1
+              fi
+              
+              sleep $SLEEP_INTERVAL
+              ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
+            done
+            
+            echo "Deployment timeout after ${MAX_WAIT} seconds"
+            exit 1
+          else
+            # Original job-based wait logic
+            JOB_ID=${{ steps.start-deployment.outputs.amplify_job_id }}
+            echo "Waiting for build job $JOB_ID to complete..."
+            
+            MAX_WAIT=1800  # 30 minutes
+            ELAPSED=0
+            SLEEP_INTERVAL=10
+            
+            while [ $ELAPSED -lt $MAX_WAIT ]; do
+              STATUS=$(aws amplify get-job \
+                --app-id "$APP_ID" \
+                --branch-name "$BRANCH_NAME" \
+                --job-id "$JOB_ID" \
+                --query 'job.summary.status' \
+                --output text)
+              
+              echo "Build status: $STATUS (Elapsed: ${ELAPSED}s)"
+              
+              if [ "$STATUS" = "SUCCEED" ]; then
+                echo "Build completed successfully!"
+                exit 0
+              elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
+                echo "Build failed with status: $STATUS"
+                
+                # Get build logs
+                echo "Fetching build logs..."
+                aws amplify get-job \
+                  --app-id "$APP_ID" \
+                  --branch-name "$BRANCH_NAME" \
+                  --job-id "$JOB_ID" \
+                  --query 'job.steps[*].[stepName,status,logUrl]' \
+                  --output table || true
+                
+                exit 1
+              fi
+              
+              sleep $SLEEP_INTERVAL
+              ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
+            done
+            
+            echo "Build timeout after ${MAX_WAIT} seconds"
+            exit 1
+          fi
 
       - name: Get Amplify App URL
         id: get-url
@@ -193,7 +298,7 @@ jobs:
           echo "**Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** ${{ steps.get-branch.outputs.amplify_branch }}" >> $GITHUB_STEP_SUMMARY
           echo "**App ID:** ${{ steps.get-amplify-app.outputs.amplify_app_id }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Build Job ID:** ${{ steps.start-build.outputs.amplify_job_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment ID:** ${{ steps.start-deployment.outputs.deployment_id || steps.start-deployment.outputs.amplify_job_id }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**App URL:** [${{ steps.get-url.outputs.amplify_app_url }}](${{ steps.get-url.outputs.amplify_app_url }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
