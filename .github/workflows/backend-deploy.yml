@@ -96,12 +96,24 @@ jobs:
           DB_NAME=$(aws rds describe-db-instances \
             --db-instance-identifier "$DB_IDENTIFIER" \
             --query 'DBInstances[0].DBName' \
-            --output text 2>/dev/null || echo "flowgenie_db")
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$DB_NAME" ] || [ "$DB_NAME" == "None" ]; then
+            echo "ERROR: Could not retrieve database name from RDS instance '$DB_IDENTIFIER'"
+            echo "Please ensure the RDS instance exists and has a database name configured"
+            exit 1
+          fi
           
           DB_USERNAME=$(aws rds describe-db-instances \
             --db-instance-identifier "$DB_IDENTIFIER" \
             --query 'DBInstances[0].MasterUsername' \
-            --output text 2>/dev/null || echo "flowgenie_admin")
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$DB_USERNAME" ] || [ "$DB_USERNAME" == "None" ]; then
+            echo "ERROR: Could not retrieve database username from RDS instance '$DB_IDENTIFIER'"
+            echo "Please ensure the RDS instance exists and has a master username configured"
+            exit 1
+          fi
           
           # Determine secret name based on stage
           if [ "$STAGE" == "prod" ]; then
@@ -113,14 +125,20 @@ jobs:
           fi
           
           echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
-          echo "db_name=${DB_NAME:-flowgenie_db}" >> $GITHUB_OUTPUT
-          echo "db_username=${DB_USERNAME:-flowgenie_admin}" >> $GITHUB_OUTPUT
+          echo "db_name=$DB_NAME" >> $GITHUB_OUTPUT
+          echo "db_username=$DB_USERNAME" >> $GITHUB_OUTPUT
           echo "db_secret_name=$DB_SECRET_NAME" >> $GITHUB_OUTPUT
           
           echo "Database endpoint: $RDS_ENDPOINT"
-          echo "Database name: ${DB_NAME:-flowgenie_db}"
-          echo "Database username: ${DB_USERNAME:-flowgenie_admin}"
+          echo "Database name: $DB_NAME"
+          echo "Database username: $DB_USERNAME"
           echo "Database secret name: $DB_SECRET_NAME"
+          
+          # Verify database name matches expected pattern
+          if [[ "$DB_NAME" != *"flowgenie"* ]]; then
+            echo "⚠️  WARNING: Database name '$DB_NAME' doesn't contain 'flowgenie'"
+            echo "   Expected database name to match the instance identifier pattern"
+          fi
 
       - name: Run database migrations via ECS
         id: run-migrations
@@ -381,14 +399,18 @@ jobs:
             echo "   This might indicate the password wasn't properly included"
           fi
           
+          # Create the connection test command as a separate variable to avoid jq escaping issues
+          CONNECTION_TEST_CMD='cd /app && echo "Verifying DATABASE_URL is set..." && if [ -z "$DATABASE_URL" ]; then echo "❌ ERROR: DATABASE_URL is empty in container"; exit 1; fi && echo "DATABASE_URL length: ${#DATABASE_URL}" && OUTPUT=$(npx prisma migrate status 2>&1); EXIT_CODE=$?; echo "$OUTPUT"; if [ $EXIT_CODE -eq 0 ] && ! echo "$OUTPUT" | grep -q "P1000\|Authentication failed\|not valid"; then echo "✅ Database connection successful"; exit 0; else echo "❌ Database connection failed"; exit 1; fi'
+          
           OVERRIDES_JSON=$(jq -n \
             --arg container_name "worker" \
             --arg db_url "$DATABASE_URL" \
             --arg stage "$STAGE" \
+            --arg cmd "$CONNECTION_TEST_CMD" \
             '{
               containerOverrides: [{
                 name: $container_name,
-                command: ["sh", "-c", "cd /app && echo \"Verifying DATABASE_URL is set...\" && if [ -z \"$DATABASE_URL\" ]; then echo \"❌ ERROR: DATABASE_URL is empty in container\"; exit 1; fi && echo \"DATABASE_URL length: ${#DATABASE_URL}\" && OUTPUT=$(npx prisma migrate status 2>&1); EXIT_CODE=$?; echo \"$OUTPUT\"; if [ $EXIT_CODE -eq 0 ] && ! echo \"$OUTPUT\" | grep -q 'P1000\|Authentication failed\|not valid'; then echo \"✅ Database connection successful\"; exit 0; else echo \"❌ Database connection failed\"; exit 1; fi"],
+                command: ["sh", "-c", $cmd],
                 environment: [
                   {name: "DATABASE_URL", value: $db_url},
                   {name: "STAGE", value: $stage},
