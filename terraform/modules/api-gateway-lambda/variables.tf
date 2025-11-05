@@ -66,9 +66,9 @@ variable "lambda_image_uri" {
 }
 
 variable "lambda_timeout" {
-  description = "Lambda timeout in seconds. For VPC-configured Lambdas, use at least 60-90 seconds to account for cold starts and ENI attachment delays."
+  description = "Lambda timeout in seconds. For VPC-configured Lambdas, use at least 60-90 seconds to account for cold starts and ENI attachment delays. Maximum is 900 seconds (15 minutes)."
   type        = number
-  default     = 90
+  default     = 300
 }
 
 variable "lambda_memory_size" {
