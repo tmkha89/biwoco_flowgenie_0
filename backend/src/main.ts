@@ -28,7 +28,8 @@ import { swaggerSpec } from './config/swagger';
 
 async function bootstrap() {
   const configService = new ConfigService();
-  const port = configService.get<number>('PORT', 3000);
+  // Use PORT env var (Lambda Web Adapter uses 8080, local uses 3000)
+  const port = process.env.PORT || configService.get<number>('PORT', 3000);
 
   // Check if running in Docker or local with HTTPS cert
   const certPath = '/usr/src/app/certs/localhost.pem';
@@ -162,9 +163,9 @@ async function bootstrap() {
     console.log('ℹ️  Swagger documentation is disabled (ENABLE_SWAGGER=false)');
   }
 
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0'); // Listen on all interfaces for Lambda
   const protocol = certFile && keyFile ? 'https' : 'http';
-  console.log(`🚀 Application is running on: ${protocol}://localhost:${port}`);
+  console.log(`🚀 Application is running on: ${protocol}://0.0.0.0:${port}`);
 }
 
 bootstrap();

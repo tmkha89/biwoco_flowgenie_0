@@ -1,4 +1,5 @@
-FROM public.ecr.aws/lambda/nodejs:20
+# Use Lambda Web Adapter base image to run standard HTTP server
+FROM public.ecr.aws/awsguru/aws-lambda-adapter:0.9.0
 
 WORKDIR ${LAMBDA_TASK_ROOT}
 
@@ -12,8 +13,13 @@ RUN npm ci --production && \
 
 # Copy built application from dist/src/ to Lambda task root
 # NestJS builds to dist/src/, so we copy from there to flatten the structure
-# This ensures lambda.js, app.module.js, etc. are at the root level
+# This ensures main.js, app.module.js, etc. are at the root level
 COPY dist/src/ ./
+
+# Set environment variables for Lambda Web Adapter
+ENV PORT=8080
+ENV READINESS_CHECK_PATH=/health
+ENV LAMBDA_TASK_ROOT=/var/task
 
 # Debug: Show what was copied
 RUN echo "=== Contents after copying dist/src/ ===" && \
@@ -22,8 +28,8 @@ RUN echo "=== Contents after copying dist/src/ ===" && \
     echo "=== All .js files in root ===" && \
     ls -la *.js 2>/dev/null | head -20 || echo "No .js files in root" && \
     echo "" && \
-    echo "=== Searching for lambda.js ===" && \
-    find . -name "lambda.js" -type f 2>/dev/null || echo "lambda.js not found" && \
+    echo "=== Searching for main.js ===" && \
+    find . -name "main.js" -type f 2>/dev/null || echo "main.js not found" && \
     echo "" && \
     echo "=== Searching for app.module.js ===" && \
     find . -name "app.module.js" -type f 2>/dev/null || echo "app.module.js not found" && \
@@ -34,21 +40,21 @@ RUN echo "=== Contents after copying dist/src/ ===" && \
     echo "=== Directory structure (top level) ===" && \
     find . -maxdepth 2 -type d | head -20 && \
     echo "" && \
-    echo "=== Checking if lambda.js exists and is readable ===" && \
-    (test -f lambda.js && echo "✅ lambda.js exists" && head -5 lambda.js || echo "❌ lambda.js does not exist or is not readable")
+    echo "=== Checking if main.js exists and is readable ===" && \
+    (test -f main.js && echo "✅ main.js exists" && head -5 main.js || echo "❌ main.js does not exist or is not readable")
 
 # Verify required files exist in their expected locations
-# lambda.js should be in root, and all modules should be in their respective directories
-RUN if [ ! -f lambda.js ]; then \
-      echo "ERROR: lambda.js not found in root" && \
-      echo "Searching everywhere for lambda.js:" && \
-      find . -name "lambda.js" -type f && \
+# main.js should be in root, and all modules should be in their respective directories
+RUN if [ ! -f main.js ]; then \
+      echo "ERROR: main.js not found in root" && \
+      echo "Searching everywhere for main.js:" && \
+      find . -name "main.js" -type f && \
       echo "" && \
       echo "Listing all files in root:" && \
       ls -la . && \
       exit 1; \
     fi && \
-    echo "✅ lambda.js found in root" && \
+    echo "✅ main.js found in root" && \
     if [ ! -f app.module.js ]; then \
       echo "ERROR: app.module.js not found in root" && \
       find . -name "app.module.js" -type f && \
@@ -64,21 +70,19 @@ RUN if [ ! -f lambda.js ]; then \
     echo "" && \
     echo "✅ Verification complete: All required files found in correct locations" && \
     echo "File sizes:" && \
-    ls -lh lambda.js app.module.js database/database.module.js 2>/dev/null || true && \
+    ls -lh main.js app.module.js database/database.module.js 2>/dev/null || true && \
     echo "" && \
-    echo "Testing if lambda.js has valid syntax (without executing module):" && \
-    node --check lambda.js && echo "✅ lambda.js syntax is valid" || echo "⚠️  Warning: lambda.js has syntax errors" && \
-    echo "" && \
-    echo "Verifying handler export exists:" && \
-    (node -e "const fs = require('fs'); const content = fs.readFileSync('lambda.js', 'utf8'); console.log(content.includes('exports.handler') || content.includes('module.exports.handler') || content.includes('export') ? '✅ Handler export found' : '⚠️  Handler export may be missing');" 2>/dev/null || echo "⚠️  Could not verify handler export") && \
+    echo "Testing if main.js has valid syntax (without executing module):" && \
+    node --check main.js && echo "✅ main.js syntax is valid" || echo "⚠️  Warning: main.js has syntax errors" && \
     echo "" && \
     echo "=== Final directory structure check ===" && \
     echo "Working directory: $(pwd)" && \
     echo "LAMBDA_TASK_ROOT: ${LAMBDA_TASK_ROOT}" && \
+    echo "PORT: ${PORT}" && \
     echo "Files that will be available at runtime:" && \
-    ls -la lambda.js 2>/dev/null || echo "ERROR: lambda.js not visible in final check"
+    ls -la main.js 2>/dev/null || echo "ERROR: main.js not visible in final check"
 
-# Set the CMD to your handler (Lambda runtime expects the handler path relative to LAMBDA_TASK_ROOT)
-# Format: ["filename.functionName"] where filename is without .js extension
-CMD [ "lambda.handler" ]
+# Lambda Web Adapter will handle converting API Gateway requests to HTTP
+# The CMD runs the standard HTTP server (main.js)
+CMD ["node", "main.js"]
 
