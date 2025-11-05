@@ -256,22 +256,31 @@ jobs:
           echo "Checking database connection..."
           echo "Database endpoint: ${{ steps.get-db.outputs.rds_endpoint }}"
           
+          # Create connection test command using jq
+          # Write a simple test script using here-doc to avoid escaping issues
+          # Use single-quoted delimiter to prevent variable expansion
+          OVERRIDES_JSON=$(jq -n \
+            --arg container_name "worker" \
+            --arg db_url "$DATABASE_URL" \
+            --arg stage "$STAGE" \
+            '{
+              containerOverrides: [{
+                name: $container_name,
+                command: ["sh", "-c", "cat > /tmp/test-connection.js << '\''SCRIPTEND'\''\nconst { PrismaClient } = require(\"@prisma/client\");\nconst prisma = new PrismaClient();\nprisma.$connect()\n  .then(() => { console.log(\"✅ Database connection successful\"); process.exit(0); })\n  .catch((err) => { console.error(\"❌ Database connection failed:\", err.message); process.exit(1); });\nSCRIPTEND\nnode /tmp/test-connection.js"],
+                environment: [
+                  {name: "DATABASE_URL", value: $db_url},
+                  {name: "STAGE", value: $stage},
+                  {name: "NODE_ENV", value: "production"}
+                ]
+              }]
+            }')
+          
           CONNECTION_TEST_TASK_ARN=$(aws ecs run-task \
             --cluster "$CLUSTER_NAME" \
             --task-definition "$TASK_DEFINITION" \
             --launch-type FARGATE \
             --network-configuration "$NETWORK_CONFIG_JSON" \
-            --overrides "{
-              \"containerOverrides\": [{
-                \"name\": \"worker\",
-                \"command\": [\"sh\", \"-c\", \"node -e 'const { PrismaClient } = require(\\\"@prisma/client\\\"); const prisma = new PrismaClient(); prisma.\\$connect().then(() => { console.log(\\\"✅ Database connection successful\\\"); process.exit(0); }).catch((err) => { console.error(\\\"❌ Database connection failed:\\\", err.message); process.exit(1); });'\"],
-                \"environment\": [
-                  {\"name\": \"DATABASE_URL\", \"value\": \"${DATABASE_URL}\"},
-                  {\"name\": \"STAGE\", \"value\": \"${STAGE}\"},
-                  {\"name\": \"NODE_ENV\", \"value\": \"production\"}
-                ]
-              }]
-            }" \
+            --overrides "$OVERRIDES_JSON" \
             --query 'tasks[0].taskArn' \
             --output text)
           
@@ -328,22 +337,29 @@ jobs:
           # Run ECS task with override command to run migrations
           echo "Starting migration task..."
           
+          # Create migration overrides JSON using jq
+          MIGRATION_OVERRIDES_JSON=$(jq -n \
+            --arg container_name "worker" \
+            --arg db_url "$DATABASE_URL" \
+            --arg stage "$STAGE" \
+            '{
+              containerOverrides: [{
+                name: $container_name,
+                command: ["sh", "-c", "npx prisma migrate deploy"],
+                environment: [
+                  {name: "DATABASE_URL", value: $db_url},
+                  {name: "STAGE", value: $stage},
+                  {name: "NODE_ENV", value: "production"}
+                ]
+              }]
+            }')
+          
           TASK_ARN=$(aws ecs run-task \
             --cluster "$CLUSTER_NAME" \
             --task-definition "$TASK_DEFINITION" \
             --launch-type FARGATE \
             --network-configuration "$NETWORK_CONFIG_JSON" \
-            --overrides "{
-              \"containerOverrides\": [{
-                \"name\": \"worker\",
-                \"command\": [\"sh\", \"-c\", \"npx prisma migrate deploy\"],
-                \"environment\": [
-                  {\"name\": \"DATABASE_URL\", \"value\": \"${DATABASE_URL}\"},
-                  {\"name\": \"STAGE\", \"value\": \"${STAGE}\"},
-                  {\"name\": \"NODE_ENV\", \"value\": \"production\"}
-                ]
-              }]
-            }" \
+            --overrides "$MIGRATION_OVERRIDES_JSON" \
             --query 'tasks[0].taskArn' \
             --output text)
           
