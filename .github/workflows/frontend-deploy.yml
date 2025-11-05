@@ -293,6 +293,41 @@ jobs:
           
           echo "Creating deployment for app: $APP_ID, branch: $BRANCH_NAME"
           
+          # Check for and cancel any pending/in-progress deployments
+          echo "🔍 Checking for pending deployments..."
+          PENDING_JOBS=$(aws amplify list-jobs \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --max-results 10 \
+            --query "jobSummaries[?status=='PENDING' || status=='PROVISIONING' || status=='RUNNING'].jobId" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$PENDING_JOBS" ] && [ "$PENDING_JOBS" != "None" ]; then
+            echo "⚠️  Found pending/in-progress deployments, cancelling them..."
+            for JOB_ID in $PENDING_JOBS; do
+              echo "  Cancelling job: $JOB_ID"
+              STOP_RESPONSE=$(aws amplify stop-job \
+                --app-id "$APP_ID" \
+                --branch-name "$BRANCH_NAME" \
+                --job-id "$JOB_ID" \
+                --output json 2>&1)
+              STOP_EXIT_CODE=$?
+              
+              if [ $STOP_EXIT_CODE -eq 0 ]; then
+                echo "  ✅ Successfully cancelled job: $JOB_ID"
+              else
+                echo "  ⚠️  Warning: Could not cancel job $JOB_ID (may have already completed)"
+                echo "  Response: $STOP_RESPONSE"
+              fi
+            done
+            
+            # Wait a moment for cancellations to process
+            echo "⏳ Waiting 5 seconds for cancellations to complete..."
+            sleep 5
+          else
+            echo "✅ No pending deployments found"
+          fi
+          
           # Try to use start-job first (for apps connected to repository)
           JOB_OUTPUT=$(aws amplify start-job \
             --app-id "$APP_ID" \
