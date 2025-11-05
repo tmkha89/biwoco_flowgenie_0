@@ -287,7 +287,7 @@ jobs:
         id: ecr-repo
         run: |
           STAGE="${{ env.STAGE }}"
-          REPO_NAME="${STAGE}-flowgenie-api"
+          REPO_NAME="${STAGE}-flowgenie-func"
           
           # Create ECR repository if it doesn't exist
           if ! aws ecr describe-repositories --repository-names "$REPO_NAME" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
@@ -332,7 +332,7 @@ jobs:
       - name: Get Lambda function name
         id: get-lambda
         run: |
-          FUNCTION_NAME="${{ env.STAGE }}-flowgenie-api"
+          FUNCTION_NAME="${{ env.STAGE }}-flowgenie-func"
           echo "lambda_function_name=$FUNCTION_NAME" >> $GITHUB_OUTPUT
           echo "Target Lambda function: $FUNCTION_NAME"
 

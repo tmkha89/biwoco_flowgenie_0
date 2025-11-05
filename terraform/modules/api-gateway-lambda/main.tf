@@ -40,7 +40,7 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
 
 # CloudWatch Log Group for Lambda
 resource "aws_cloudwatch_log_group" "lambda" {
-  name              = "/aws/lambda/${var.stage}-flowgenie-api"
+  name              = "/aws/lambda/${var.stage}-flowgenie-func"
   retention_in_days = var.stage == "prod" ? 30 : 7
 
   tags = merge(
@@ -53,7 +53,7 @@ resource "aws_cloudwatch_log_group" "lambda" {
 
 # Lambda Function (Container Image)
 resource "aws_lambda_function" "api" {
-  function_name = "${var.stage}-flowgenie-api"
+  function_name = "${var.stage}-flowgenie-func"
   role          = aws_iam_role.lambda.arn
   package_type  = "Image"
   timeout       = var.lambda_timeout
@@ -61,7 +61,7 @@ resource "aws_lambda_function" "api" {
 
   # ECR Image URI (will be updated by CI/CD pipeline)
   # Use a placeholder image initially, or provide the actual ECR image URI
-  image_uri = var.lambda_image_uri != "" ? var.lambda_image_uri : "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.stage}-flowgenie-api:latest"
+  image_uri = var.lambda_image_uri != "" ? var.lambda_image_uri : "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.stage}-flowgenie-func:latest"
 
   vpc_config {
     subnet_ids         = var.subnet_ids
@@ -94,7 +94,7 @@ resource "aws_lambda_function" "api" {
   tags = merge(
     var.tags,
     {
-      Name = "${var.stage}-flowgenie-api"
+      Name = "${var.stage}-flowgenie-func"
     }
   )
 }
