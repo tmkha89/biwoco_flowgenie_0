@@ -122,16 +122,21 @@ jobs:
           echo "Database username: ${DB_USERNAME:-flowgenie_admin}"
           echo "Database secret name: $DB_SECRET_NAME"
 
-      - name: Run database migrations
+      - name: Run database migrations via ECS
         id: run-migrations
-        working-directory: ./backend
         env:
           DB_PASSWORD_DEV: ${{ secrets.DB_PASSWORD_DEV }}
           DB_PASSWORD_STAGING: ${{ secrets.DB_PASSWORD_STAGING }}
           DB_PASSWORD_PROD: ${{ secrets.DB_PASSWORD_PROD }}
         run: |
-          # Get the correct password based on stage
+          # Ensure jq is available
+          if ! command -v jq &> /dev/null; then
+            echo "jq is required but not installed. Installing..."
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
           STAGE="${{ env.STAGE }}"
+          
+          # Get the correct password based on stage
           if [ "$STAGE" == "prod" ]; then
             DB_PASSWORD="$DB_PASSWORD_PROD"
           elif [ "$STAGE" == "staging" ]; then
@@ -140,20 +145,171 @@ jobs:
             DB_PASSWORD="$DB_PASSWORD_DEV"
           fi
           
+          # Get ECS cluster and task definition details
+          CLUSTER_NAME="${STAGE}-flowgenie-worker"
+          TASK_DEFINITION="${STAGE}-flowgenie-worker"
+          
+          echo "Running database migrations via ECS task..."
+          echo "Cluster: $CLUSTER_NAME"
+          echo "Task Definition: $TASK_DEFINITION"
+          
+          # Get task definition ARN
+          TASK_DEF_ARN=$(aws ecs describe-task-definition \
+            --task-definition "$TASK_DEFINITION" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$TASK_DEF_ARN" ] || [ "$TASK_DEF_ARN" == "None" ]; then
+            echo "ERROR: Task definition '$TASK_DEFINITION' not found"
+            echo "Please ensure the ECS infrastructure is deployed first"
+            exit 1
+          fi
+          
+          # Get network configuration from existing ECS service
+          SERVICE_NAME="${STAGE}-flowgenie-worker"
+          echo "Getting network configuration from ECS service..."
+          
+          # Get network configuration from service (if it exists)
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration' \
+            --output json 2>/dev/null || echo "{}")
+          
+          if [ "$NETWORK_CONFIG" != "{}" ] && [ "$NETWORK_CONFIG" != "null" ]; then
+            # Extract subnet IDs and security group IDs from service
+            SUBNET_IDS=$(echo "$NETWORK_CONFIG" | jq -r '.subnets[]' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            SECURITY_GROUP_IDS=$(echo "$NETWORK_CONFIG" | jq -r '.securityGroups[]' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          else
+            # Fallback: Get from task definition or VPC
+            echo "Service not found, getting network config from VPC..."
+            DB_IDENTIFIER="${STAGE}-flowgenie-db"
+            VPC_ID=$(aws rds describe-db-instances \
+              --db-instance-identifier "$DB_IDENTIFIER" \
+              --query 'DBInstances[0].DBSubnetGroup.VpcId' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -z "$VPC_ID" ] || [ "$VPC_ID" == "None" ]; then
+              echo "ERROR: Could not determine VPC ID"
+              exit 1
+            fi
+            
+            # Get subnet IDs (prefer private subnets)
+            SUBNET_IDS=$(aws ec2 describe-subnets \
+              --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=*private*" \
+              --query 'Subnets[*].SubnetId' \
+              --output json | jq -c '.')
+            
+            if [ -z "$SUBNET_IDS" ] || [ "$SUBNET_IDS" == "null" ] || [ "$SUBNET_IDS" == "[]" ]; then
+              # Fallback to any subnet in VPC
+              SUBNET_IDS=$(aws ec2 describe-subnets \
+                --filters "Name=vpc-id,Values=$VPC_ID" \
+                --query 'Subnets[0:2].SubnetId' \
+                --output json | jq -c '.')
+            fi
+            
+            # Get security group ID (from backend security group)
+            SECURITY_GROUP_ID=$(aws ec2 describe-security-groups \
+              --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=*${STAGE}*backend*" \
+              --query 'SecurityGroups[0].GroupId' \
+              --output text)
+            
+            if [ -z "$SECURITY_GROUP_ID" ] || [ "$SECURITY_GROUP_ID" == "None" ]; then
+              echo "ERROR: Could not find security group"
+              exit 1
+            fi
+            
+            SECURITY_GROUP_IDS="[\"$SECURITY_GROUP_ID\"]"
+          fi
+          
+          echo "Subnet IDs: $SUBNET_IDS"
+          echo "Security Group IDs: $SECURITY_GROUP_IDS"
+          
           # Construct DATABASE_URL
           DATABASE_URL="postgresql://${{ steps.get-db.outputs.db_username }}:${DB_PASSWORD}@${{ steps.get-db.outputs.rds_endpoint }}:5432/${{ steps.get-db.outputs.db_name }}"
           
-          export DATABASE_URL
+          # Get ECR repository URI for the image
+          ECR_REPO="${STAGE}-flowgenie-worker"
+          ECR_URI=$(aws ecr describe-repositories \
+            --repository-names "$ECR_REPO" \
+            --query 'repositories[0].repositoryUri' \
+            --output text 2>/dev/null || echo "")
           
-          echo "Running database migrations..."
+          if [ -z "$ECR_URI" ]; then
+            echo "ERROR: ECR repository '$ECR_REPO' not found"
+            exit 1
+          fi
           
-          # Generate Prisma Client if needed
-          npx prisma generate
+          # Run ECS task with override command to run migrations
+          echo "Starting migration task..."
           
-          # Run migrations
-          if ! npx prisma migrate deploy; then
-            echo "ERROR: Database migration failed"
-            echo "Please check the migration logs above for details"
+          # Create network configuration JSON
+          NETWORK_CONFIG_JSON=$(jq -n \
+            --argjson subnets "$SUBNET_IDS" \
+            --argjson securityGroups "$SECURITY_GROUP_IDS" \
+            '{
+              awsvpcConfiguration: {
+                subnets: $subnets,
+                securityGroups: $securityGroups,
+                assignPublicIp: "DISABLED"
+              }
+            }')
+          
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --task-definition "$TASK_DEFINITION" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG_JSON" \
+            --overrides "{
+              \"containerOverrides\": [{
+                \"name\": \"worker\",
+                \"command\": [\"sh\", \"-c\", \"npx prisma migrate deploy\"],
+                \"environment\": [
+                  {\"name\": \"DATABASE_URL\", \"value\": \"${DATABASE_URL}\"},
+                  {\"name\": \"STAGE\", \"value\": \"${STAGE}\"},
+                  {\"name\": \"NODE_ENV\", \"value\": \"production\"}
+                ]
+              }]
+            }" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+          
+          if [ -z "$TASK_ARN" ] || [ "$TASK_ARN" == "None" ]; then
+            echo "ERROR: Failed to start migration task"
+            exit 1
+          fi
+          
+          echo "Migration task started: $TASK_ARN"
+          echo "Waiting for task to complete..."
+          
+          # Wait for task to complete (max 10 minutes)
+          aws ecs wait tasks-stopped \
+            --cluster "$CLUSTER_NAME" \
+            --tasks "$TASK_ARN" \
+            --max-attempts 120 \
+            --delay 5 || true
+          
+          # Get task exit code
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER_NAME" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text)
+          
+          # Get task logs
+          LOG_GROUP="/ecs/${STAGE}-flowgenie-worker"
+          TASK_ID=$(echo $TASK_ARN | cut -d'/' -f3)
+          
+          echo "Fetching migration logs..."
+          aws logs tail "$LOG_GROUP" \
+            --follow false \
+            --format short \
+            --since 5m 2>/dev/null || echo "Could not fetch logs"
+          
+          if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "null" ]; then
+            echo "ERROR: Database migration failed with exit code: $EXIT_CODE"
+            echo "Task ARN: $TASK_ARN"
+            echo "Please check CloudWatch logs in log group: $LOG_GROUP"
             exit 1
           fi
           
