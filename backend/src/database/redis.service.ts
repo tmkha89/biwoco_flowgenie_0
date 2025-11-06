@@ -1,10 +1,11 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, RedisClientType } from 'redis';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client: RedisClientType;
+  private readonly logger = new Logger(RedisService.name);
 
   constructor(private configService: ConfigService) {
     let redisUrl = this.configService.get<string>('REDIS_URL');
@@ -64,7 +65,26 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
-    await this.client.connect();
+    // Connect to Redis with timeout to prevent blocking app startup
+    // This is critical for App Runner health checks - the app must start quickly
+    this.logger.log('Attempting to connect to Redis...');
+    
+    const connectPromise = this.client.connect();
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Redis connection timeout')), 5000)
+    );
+
+    try {
+      await Promise.race([connectPromise, timeoutPromise]);
+      this.logger.log('✅ Redis connection established');
+    } catch (error) {
+      this.logger.warn(`⚠️ Redis connection failed or timed out: ${error.message}`);
+      this.logger.warn('Application will continue to start, but Redis features may be unavailable');
+      // Don't throw - allow app to start even if Redis is not ready
+      // This is important for App Runner health checks
+    } finally {
+      this.logger.log('Redis connection attempt completed (onModuleInit finished)');
+    }
   }
 
   async onModuleDestroy() {

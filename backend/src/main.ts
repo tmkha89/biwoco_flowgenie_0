@@ -28,7 +28,8 @@ import { swaggerSpec } from './config/swagger';
 
 async function bootstrap() {
   const configService = new ConfigService();
-  const port = configService.get<number>('PORT', 3000);
+  // Use PORT env var (Lambda Web Adapter uses 8080, local uses 3000)
+  const port = process.env.PORT || configService.get<number>('PORT', 3000);
 
   // Check if running in Docker or local with HTTPS cert
   const certPath = '/usr/src/app/certs/localhost.pem';
@@ -61,6 +62,8 @@ async function bootstrap() {
   const loggerOptions = {
     logger: ['log', 'error', 'warn', 'debug', 'verbose'] as LogLevel[], // Enable all log levels
   };
+  
+  logger.log('Starting NestJS application bootstrap...');
 
   let app;
   if (certFile && keyFile) {
@@ -162,9 +165,33 @@ async function bootstrap() {
     console.log('ℹ️  Swagger documentation is disabled (ENABLE_SWAGGER=false)');
   }
 
-  await app.listen(port);
-  const protocol = certFile && keyFile ? 'https' : 'http';
-  console.log(`🚀 Application is running on: ${protocol}://localhost:${port}`);
+  // Log before attempting to listen (helps debug if listen hangs)
+  logger.log(`All routes registered, attempting to start server on port ${port}...`);
+  
+  // Start the server
+  try {
+    // NestJS app.listen() returns a Promise that resolves when the server starts listening
+    logger.log(`Calling app.listen(${port}, '0.0.0.0')...`);
+    const httpServer = await app.listen(port, '0.0.0.0');
+    logger.log(`✅ app.listen() completed successfully`);
+    logger.log(`HTTP Server address: ${JSON.stringify(httpServer.address())}`);
+    
+    const protocol = certFile && keyFile ? 'https' : 'http';
+    logger.log(`🚀 Application is running on: ${protocol}://0.0.0.0:${port}`);
+    logger.log(`✅ Health check endpoint available at: ${protocol}://0.0.0.0:${port}/health`);
+    console.log(`🚀 Application is running on: ${protocol}://0.0.0.0:${port}`);
+    console.log(`✅ Health check endpoint available at: ${protocol}://0.0.0.0:${port}/health`);
+  } catch (error) {
+    logger.error(`❌ Failed to start application: ${error.message}`);
+    logger.error(error.stack);
+    console.error(`❌ Failed to start application: ${error.message}`);
+    console.error(error.stack);
+    process.exit(1);
+  }
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  console.error('❌ Fatal error during bootstrap:', error);
+  console.error(error.stack);
+  process.exit(1);
+});

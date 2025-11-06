@@ -1,0 +1,417 @@
+name: Deploy Worker, Database Migrations and Redis Cache
+
+on:
+  push:
+    branches:
+      - main
+      - features/pipeline_backend
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Deployment stage (dev/staging/prod)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+  STAGE: ${{ inputs.stage || 'dev' }}
+  NODE_VERSION: '24'
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  # Run Database Migrations
+  run-migrations:
+    name: Run Database Migrations
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || 'dev' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get database connection details
+        id: get-db
+        run: |
+          STAGE="${{ env.STAGE }}"
+          # RDS instance identifier: "${stage}-flowgenie-db" (e.g., "dev-flowgenie-db")
+          DB_IDENTIFIER="${STAGE}-flowgenie-db"
+          
+          echo "Getting database connection details for RDS instance: $DB_IDENTIFIER"
+          echo "Note: This is the RDS instance identifier. The PostgreSQL database name may differ."
+          
+          # Get RDS endpoint
+          RDS_ENDPOINT=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --query 'DBInstances[0].Endpoint.Address' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" == "None" ]; then
+            echo "ERROR: RDS instance '$DB_IDENTIFIER' not found"
+            echo "Please ensure the database is deployed via Terraform"
+            exit 1
+          fi
+          
+          # Get database name and username (from RDS instance)
+          DB_NAME=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --query 'DBInstances[0].DBName' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$DB_NAME" ] || [ "$DB_NAME" == "None" ]; then
+            echo "ERROR: Could not retrieve database name from RDS instance '$DB_IDENTIFIER'"
+            echo "Please ensure the RDS instance exists and has a database name configured"
+            exit 1
+          fi
+          
+          DB_USERNAME=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --query 'DBInstances[0].MasterUsername' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$DB_USERNAME" ] || [ "$DB_USERNAME" == "None" ]; then
+            echo "ERROR: Could not retrieve database username from RDS instance '$DB_IDENTIFIER'"
+            echo "Please ensure the RDS instance exists and has a master username configured"
+            exit 1
+          fi
+          
+          # Determine secret name based on stage
+          if [ "$STAGE" == "prod" ]; then
+            DB_SECRET_NAME="DB_PASSWORD_PROD"
+          elif [ "$STAGE" == "staging" ]; then
+            DB_SECRET_NAME="DB_PASSWORD_STAGING"
+          else
+            DB_SECRET_NAME="DB_PASSWORD_DEV"
+          fi
+          
+          echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "db_name=$DB_NAME" >> $GITHUB_OUTPUT
+          echo "db_username=$DB_USERNAME" >> $GITHUB_OUTPUT
+          echo "db_secret_name=$DB_SECRET_NAME" >> $GITHUB_OUTPUT
+          
+          echo "RDS Instance Identifier: $DB_IDENTIFIER"
+          echo "Database endpoint: $RDS_ENDPOINT"
+          echo "PostgreSQL Database Name: $DB_NAME"
+          echo "Database username: $DB_USERNAME"
+          echo "Database secret name: $DB_SECRET_NAME"
+          
+          # Verify database name is retrieved
+          echo ""
+          echo "✅ Successfully retrieved database connection details:"
+          echo "   Instance: $DB_IDENTIFIER"
+          echo "   PostgreSQL DB: $DB_NAME"
+          echo "   Username: $DB_USERNAME"
+          echo "   Endpoint: $RDS_ENDPOINT"
+
+      - name: Run database migrations via ECS
+        id: run-migrations
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          if ! command -v jq &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+          
+          STAGE="${{ env.STAGE }}"
+          CLUSTER_NAME="${STAGE}-flowgenie-worker"
+          TASK_DEFINITION="${STAGE}-flowgenie-worker"
+          
+          # Construct DATABASE_URL
+          DATABASE_URL="postgresql://${{ steps.get-db.outputs.db_username }}:${DB_PASSWORD}@${{ steps.get-db.outputs.rds_endpoint }}:5432/${{ steps.get-db.outputs.db_name }}"
+          
+          # Get network configuration from ECS service
+          SERVICE_NAME="${STAGE}-flowgenie-worker"
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration' \
+            --output json 2>/dev/null || echo "{}")
+          
+          if [ "$NETWORK_CONFIG" != "{}" ] && [ "$NETWORK_CONFIG" != "null" ]; then
+            SUBNET_IDS=$(echo "$NETWORK_CONFIG" | jq -r '.subnets[]' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            SECURITY_GROUP_IDS=$(echo "$NETWORK_CONFIG" | jq -r '.securityGroups[]' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          else
+            echo "ERROR: Could not get network configuration from ECS service"
+            exit 1
+          fi
+          
+          # Create network configuration JSON
+          NETWORK_CONFIG_JSON=$(jq -n \
+            --argjson subnets "$SUBNET_IDS" \
+            --argjson securityGroups "$SECURITY_GROUP_IDS" \
+            '{
+              awsvpcConfiguration: {
+                subnets: $subnets,
+                securityGroups: $securityGroups,
+                assignPublicIp: "DISABLED"
+              }
+            }')
+          
+          # Run migrations
+          echo "Running database migrations..."
+          MIGRATION_OVERRIDES_JSON=$(jq -n \
+            --arg container_name "worker" \
+            --arg db_url "$DATABASE_URL" \
+            --arg stage "$STAGE" \
+            '{
+              containerOverrides: [{
+                name: $container_name,
+                command: ["sh", "-c", "cd /app && npx prisma migrate deploy"],
+                environment: [
+                  {name: "DATABASE_URL", value: $db_url},
+                  {name: "STAGE", value: $stage},
+                  {name: "NODE_ENV", value: "production"}
+                ]
+              }]
+            }')
+          
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --task-definition "$TASK_DEFINITION" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG_JSON" \
+            --overrides "$MIGRATION_OVERRIDES_JSON" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+          
+          if [ -z "$TASK_ARN" ] || [ "$TASK_ARN" == "None" ]; then
+            echo "ERROR: Failed to start migration task"
+            exit 1
+          fi
+          
+          echo "Migration task started: $TASK_ARN"
+          echo "Waiting for completion..."
+          
+          # Wait for task to complete
+          MAX_WAIT=600
+          ELAPSED=0
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            TASK_STATUS=$(aws ecs describe-tasks \
+              --cluster "$CLUSTER_NAME" \
+              --tasks "$TASK_ARN" \
+              --query 'tasks[0].lastStatus' \
+              --output text 2>/dev/null || echo "UNKNOWN")
+            
+            if [ "$TASK_STATUS" == "STOPPED" ]; then
+              break
+            fi
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+          
+          # Get exit code
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER_NAME" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text 2>/dev/null || echo "null")
+          
+          # Get logs
+          LOG_GROUP="/ecs/${STAGE}-flowgenie-worker"
+          TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $3}')
+          LOG_STREAM="ecs/worker/$TASK_ID"
+          aws logs tail "$LOG_GROUP" --log-stream-names "$LOG_STREAM" --format short --since 10m 2>/dev/null | tail -50 || echo "Could not fetch logs"
+          
+          if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "null" ]; then
+            echo "ERROR: Migration failed with exit code: $EXIT_CODE"
+            exit 1
+          fi
+          
+          echo "✅ Database migrations completed successfully"
+
+
+  # Build and Deploy Worker to ECS
+  # TEMPORARILY DISABLED
+  deploy-worker:
+    name: Build and Deploy Worker to ECS
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || 'dev' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get ECR repository URI
+        id: get-ecr
+        run: |
+          STAGE="${{ env.STAGE }}"
+          REPO_NAME="${STAGE}-flowgenie-worker"
+          
+          # Get repository URI
+          REPO_URI=$(aws ecr describe-repositories \
+            --repository-names "$REPO_NAME" \
+            --query 'repositories[0].repositoryUri' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$REPO_URI" ] || [ "$REPO_URI" == "None" ]; then
+            echo "ERROR: ECR repository '$REPO_NAME' does not exist"
+            echo "Please run infrastructure deployment first (infra-deploy workflow)"
+            exit 1
+          fi
+          
+          echo "ecr_repository=$REPO_NAME" >> $GITHUB_OUTPUT
+          echo "ecr_repository_uri=$REPO_URI" >> $GITHUB_OUTPUT
+          echo "ECR Repository: $REPO_URI"
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        working-directory: ./backend
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ECR_REPOSITORY: ${{ steps.get-ecr.outputs.ecr_repository_uri }}
+        run: |
+          echo "Building Docker image for worker..."
+          
+          docker build \
+            -f Dockerfile.worker \
+            -t "$ECR_REPOSITORY:$IMAGE_TAG" \
+            -t "$ECR_REPOSITORY:latest" \
+            .
+          
+          echo "Pushing Docker image to ECR..."
+          docker push "$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "$ECR_REPOSITORY:latest"
+          
+          echo "Docker image pushed successfully"
+
+      - name: Get ECS cluster and service names
+        id: get-ecs
+        run: |
+          STAGE="${{ env.STAGE }}"
+          CLUSTER_NAME="${STAGE}-flowgenie-worker"
+          SERVICE_NAME="${STAGE}-flowgenie-worker"
+          
+          echo "ecs_cluster=$CLUSTER_NAME" >> $GITHUB_OUTPUT
+          echo "ecs_service=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "ECS Cluster: $CLUSTER_NAME"
+          echo "ECS Service: $SERVICE_NAME"
+
+      - name: Force new ECS deployment
+        run: |
+          CLUSTER_NAME="${{ steps.get-ecs.outputs.ecs_cluster }}"
+          SERVICE_NAME="${{ steps.get-ecs.outputs.ecs_service }}"
+          
+          echo "Forcing new ECS deployment..."
+          
+          # Check if service exists
+          if ! aws ecs describe-services \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
+            --query 'services[0].serviceName' \
+            --output text 2>&1 | grep -q "$SERVICE_NAME"; then
+            echo "ERROR: ECS service '$SERVICE_NAME' does not exist"
+            echo "Please run infrastructure deployment first (infra-deploy workflow)"
+            exit 1
+          fi
+          
+          # Force new deployment
+          aws ecs update-service \
+            --cluster "$CLUSTER_NAME" \
+            --service "$SERVICE_NAME" \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "ECS deployment initiated"
+
+      - name: Wait for ECS deployment to complete
+        run: |
+          CLUSTER_NAME="${{ steps.get-ecs.outputs.ecs_cluster }}"
+          SERVICE_NAME="${{ steps.get-ecs.outputs.ecs_service }}"
+          
+          echo "Waiting for ECS deployment to stabilize..."
+          
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "ECS deployment completed successfully"
+
+      - name: Worker Deployment Summary
+        run: |
+          echo "## Worker ECS Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster:** ${{ steps.get-ecs.outputs.ecs_cluster }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** ${{ steps.get-ecs.outputs.ecs_service }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ steps.get-ecr.outputs.ecr_repository_uri }}:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Worker has been successfully deployed to ECS!" >> $GITHUB_STEP_SUMMARY
+
+  # Verify Redis Cache
+  # TEMPORARILY DISABLED
+  verify-redis:
+    name: Verify Redis Cache Infrastructure
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || 'dev' }}
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify Redis cluster exists
+        run: |
+          STAGE="${{ env.STAGE }}"
+          REPLICATION_GROUP_ID="${STAGE}-flowgenie-redis"
+          
+          echo "Verifying Redis cluster: $REPLICATION_GROUP_ID"
+          
+          REDIS_STATUS=$(aws elasticache describe-replication-groups \
+            --replication-group-id "$REPLICATION_GROUP_ID" \
+            --query 'ReplicationGroups[0].Status' \
+            --output text 2>&1 || echo "NOT_FOUND")
+          
+          if [ "$REDIS_STATUS" == "NOT_FOUND" ] || [ -z "$REDIS_STATUS" ] || [ "$REDIS_STATUS" == "None" ]; then
+            echo "ERROR: Redis cluster '$REPLICATION_GROUP_ID' does not exist"
+            echo "Please run infrastructure deployment first (infra-deploy workflow)"
+            exit 1
+          fi
+          
+          echo "Redis cluster status: $REDIS_STATUS"
+          
+          if [ "$REDIS_STATUS" != "available" ]; then
+            echo "WARNING: Redis cluster is not in 'available' state"
+            echo "Current status: $REDIS_STATUS"
+          else
+            echo "Redis cluster is available"
+          fi
+
+      - name: Redis Verification Summary
+        run: |
+          echo "## Redis Cache Verification Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Redis Cluster:** ${{ env.STAGE }}-flowgenie-redis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Redis cache infrastructure verified!" >> $GITHUB_STEP_SUMMARY

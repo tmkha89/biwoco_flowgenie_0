@@ -1,0 +1,220 @@
+# Data source for existing ECR repository (if using existing)
+data "aws_ecr_repository" "existing" {
+  count = var.use_existing_ecr ? 1 : 0
+  name  = var.existing_ecr_repository_name
+}
+
+# ECR Repository for Backend (only created if not using existing)
+resource "aws_ecr_repository" "backend" {
+  count = var.use_existing_ecr ? 0 : 1
+  
+  name                 = "${var.stage}-flowgenie-backend"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.stage}-flowgenie-backend-ecr"
+    }
+  )
+}
+
+# Local value to get the ECR repository URL
+locals {
+  ecr_repository_url = var.use_existing_ecr ? data.aws_ecr_repository.existing[0].repository_url : aws_ecr_repository.backend[0].repository_url
+  
+  # Generate VPC connector name (must be 4-40 characters)
+  # Shorten service name by replacing "apprunner" with "ar" if present
+  vpc_connector_name_base = var.service_name != "" ? replace(var.service_name, "apprunner", "ar") : "${var.stage}-flowgenie"
+  # Ensure it fits within 40 chars (leave room for "-vpc" suffix)
+  vpc_connector_name = length("${local.vpc_connector_name_base}-vpc") > 40 ? "${substr(local.vpc_connector_name_base, 0, 36)}-vpc" : "${local.vpc_connector_name_base}-vpc"
+  
+  # VPC connector ARN (either existing or newly created)
+  # If existing_vpc_connector_arn is provided, use it; otherwise use the created connector
+  vpc_connector_arn = var.existing_vpc_connector_arn != "" ? var.existing_vpc_connector_arn : (length(aws_apprunner_vpc_connector.main) > 0 ? aws_apprunner_vpc_connector.main[0].arn : "")
+}
+
+# IAM Role for App Runner to access ECR
+resource "aws_iam_role" "apprunner_access" {
+  name = var.service_name != "" ? "${var.service_name}-access-role" : "${var.stage}-apprunner-access-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "build.apprunner.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.stage}-apprunner-access-role"
+    }
+  )
+}
+
+resource "aws_iam_role_policy_attachment" "apprunner_access" {
+  role       = aws_iam_role.apprunner_access.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
+}
+
+# App Runner Service
+resource "aws_apprunner_service" "backend" {
+  service_name = var.service_name != "" ? var.service_name : "${var.stage}-flowgenie-apprunner-backend"
+
+  source_configuration {
+    auto_deployments_enabled = var.auto_deploy_enabled
+
+    image_repository {
+      image_identifier      = "${local.ecr_repository_url}:latest"
+      image_configuration {
+        port = var.container_port
+        # Set minimal environment variables here - full env vars are managed by app deployment pipeline
+        # This prevents Terraform from updating App Runner env vars during infrastructure deployments
+        runtime_environment_variables = merge(
+          {
+            PORT             = tostring(var.container_port)
+            NODE_ENV         = var.stage == "prod" ? "production" : var.stage
+            STAGE            = var.stage
+            DATABASE_URL     = "postgresql://${var.db_username}:${var.db_password}@${var.rds_endpoint}:5432/${var.db_name}"
+            REDIS_URL        = var.redis_endpoint != "" ? "redis://${var.redis_endpoint}:6379" : ""
+            REDIS_AUTH_TOKEN = var.redis_auth_token != "" ? var.redis_auth_token : ""
+          },
+          var.environment_variables
+        )
+      }
+      image_repository_type = "ECR"
+    }
+
+    authentication_configuration {
+      access_role_arn = aws_iam_role.apprunner_access.arn
+    }
+  }
+
+  # Lifecycle rule to ignore changes to runtime environment variables
+  # This prevents Terraform from updating App Runner env vars during infrastructure deployments
+  # Environment variables should be managed by the application deployment pipeline (app-runner-deploy.yml)
+  lifecycle {
+    ignore_changes = [
+      source_configuration[0].image_repository[0].image_configuration[0].runtime_environment_variables,
+      source_configuration[0].image_repository[0].image_identifier,
+    ]
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.apprunner_access,
+  ]
+
+  instance_configuration {
+    cpu               = var.cpu
+    memory            = var.memory
+    instance_role_arn = aws_iam_role.apprunner_instance.arn
+  }
+
+  # Environment variables are set via apprunner.yaml or can be updated via API
+  # For now, we'll use the apprunner.yaml file in the repository
+
+  network_configuration {
+    ingress_configuration {
+      is_publicly_accessible = true
+    }
+    egress_configuration {
+      egress_type       = "VPC"
+      vpc_connector_arn = local.vpc_connector_arn
+    }
+  }
+
+  health_check_configuration {
+    protocol            = "HTTP"
+    path                = "/health"
+    interval            = 10
+    timeout             = 10
+    healthy_threshold   = 1
+    unhealthy_threshold = 10
+  }
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.stage}-flowgenie-backend"
+    }
+  )
+}
+
+# VPC Connector for App Runner (allows access to RDS and Redis)
+# VPC connector name must be 4-40 characters
+# Name includes service name to ensure uniqueness per App Runner service
+# Note: AWS doesn't allow duplicate VPC connectors with the same security groups/subnets
+# If using existing_vpc_connector_arn, this resource will not be created
+# If you get an error about existing connector, import it: terraform import module.app_runner.aws_apprunner_vpc_connector.main <vpc-connector-arn>
+resource "aws_apprunner_vpc_connector" "main" {
+  count = var.existing_vpc_connector_arn == "" ? 1 : 0
+
+  vpc_connector_name = local.vpc_connector_name
+  subnets            = var.subnet_ids
+  security_groups    = var.security_group_ids
+
+  tags = merge(
+    var.tags,
+    {
+      Name = var.service_name != "" ? "${var.service_name}-vpc-connector" : "${var.stage}-flowgenie-vpc-connector"
+    }
+  )
+
+  # Lifecycle rule to handle existing resources
+  # If importing existing VPC connector, Terraform will match it by ARN/ID
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+
+
+# IAM Role for App Runner instances
+resource "aws_iam_role" "apprunner_instance" {
+  name = var.service_name != "" ? "${var.service_name}-instance-role" : "${var.stage}-apprunner-instance-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "tasks.apprunner.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.stage}-apprunner-instance-role"
+    }
+  )
+}
+
+# CloudWatch Log Group for App Runner
+resource "aws_cloudwatch_log_group" "apprunner" {
+  name              = var.service_name != "" ? "/aws/apprunner/${var.service_name}" : "/aws/apprunner/${var.stage}-flowgenie-apprunner-backend"
+  retention_in_days = var.stage == "prod" ? 30 : 7
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.stage}-apprunner-logs"
+    }
+  )
+}
+

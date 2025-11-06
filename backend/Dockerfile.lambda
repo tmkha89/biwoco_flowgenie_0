@@ -1,0 +1,110 @@
+# Use AWS Lambda Node.js base image
+FROM public.ecr.aws/lambda/nodejs:20
+
+# Install Lambda Web Adapter (it's an extension that runs alongside Lambda runtime)
+# The adapter binary needs to be in /opt/extensions/
+RUN mkdir -p /opt/extensions && \
+    curl -L -f https://github.com/awslabs/aws-lambda-web-adapter/releases/download/v0.9.0/aws-lambda-web-adapter-x86_64 -o /opt/extensions/lambda-adapter && \
+    chmod +x /opt/extensions/lambda-adapter && \
+    file /opt/extensions/lambda-adapter && \
+    ls -lh /opt/extensions/lambda-adapter && \
+    test -f /opt/extensions/lambda-adapter && \
+    echo "✅ Lambda Web Adapter downloaded and verified"
+
+# Set environment variables for Lambda Web Adapter
+ENV PORT=8080
+ENV READINESS_CHECK_PATH=/health
+ENV LAMBDA_TASK_ROOT=/var/task
+
+# Google OAuth build arguments (passed from GitHub Actions)
+# These can be overridden at runtime via Lambda configuration
+ARG GOOGLE_CLIENT_ID=""
+ARG GOOGLE_CLIENT_SECRET=""
+ARG GOOGLE_REDIRECT_URI=""
+
+# Set as environment variables in the image
+ENV GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+ENV GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+ENV GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Copy package files
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Install dependencies
+RUN npm ci --production && \
+    npx prisma generate
+
+# Copy built application from dist/src/ to Lambda task root
+# NestJS builds to dist/src/, so we copy from there to flatten the structure
+# This ensures main.js, app.module.js, etc. are at the root level
+COPY dist/src/ ./
+
+# Debug: Show what was copied
+RUN echo "=== Contents after copying dist/src/ ===" && \
+    ls -la . && \
+    echo "" && \
+    echo "=== All .js files in root ===" && \
+    ls -la *.js 2>/dev/null | head -20 || echo "No .js files in root" && \
+    echo "" && \
+    echo "=== Searching for main.js ===" && \
+    find . -name "main.js" -type f 2>/dev/null || echo "main.js not found" && \
+    echo "" && \
+    echo "=== Searching for app.module.js ===" && \
+    find . -name "app.module.js" -type f 2>/dev/null || echo "app.module.js not found" && \
+    echo "" && \
+    echo "=== Searching for database.module.js ===" && \
+    find . -name "database.module.js" -type f 2>/dev/null || echo "database.module.js not found" && \
+    echo "" && \
+    echo "=== Directory structure (top level) ===" && \
+    find . -maxdepth 2 -type d | head -20 && \
+    echo "" && \
+    echo "=== Checking if main.js exists and is readable ===" && \
+    (test -f main.js && echo "✅ main.js exists" && head -5 main.js || echo "❌ main.js does not exist or is not readable")
+
+# Verify required files exist in their expected locations
+# main.js should be in root, and all modules should be in their respective directories
+RUN if [ ! -f main.js ]; then \
+      echo "ERROR: main.js not found in root" && \
+      echo "Searching everywhere for main.js:" && \
+      find . -name "main.js" -type f && \
+      echo "" && \
+      echo "Listing all files in root:" && \
+      ls -la . && \
+      exit 1; \
+    fi && \
+    echo "✅ main.js found in root" && \
+    if [ ! -f app.module.js ]; then \
+      echo "ERROR: app.module.js not found in root" && \
+      find . -name "app.module.js" -type f && \
+      exit 1; \
+    fi && \
+    echo "✅ app.module.js found in root" && \
+    if [ ! -f database/database.module.js ]; then \
+      echo "ERROR: database/database.module.js not found (required by app.module.js)" && \
+      find . -name "database.module.js" -type f && \
+      exit 1; \
+    fi && \
+    echo "✅ database/database.module.js found" && \
+    echo "" && \
+    echo "✅ Verification complete: All required files found in correct locations" && \
+    echo "File sizes:" && \
+    ls -lh main.js app.module.js database/database.module.js 2>/dev/null || true && \
+    echo "" && \
+    echo "Testing if main.js has valid syntax (without executing module):" && \
+    node --check main.js && echo "✅ main.js syntax is valid" || echo "⚠️  Warning: main.js has syntax errors" && \
+    echo "" && \
+    echo "=== Final directory structure check ===" && \
+    echo "Working directory: $(pwd)" && \
+    echo "LAMBDA_TASK_ROOT: ${LAMBDA_TASK_ROOT}" && \
+    echo "PORT: ${PORT}" && \
+    echo "Files that will be available at runtime:" && \
+    ls -la main.js 2>/dev/null || echo "ERROR: main.js not visible in final check"
+
+# Override the default Lambda entrypoint since we're using Lambda Web Adapter
+# Lambda Web Adapter will handle the request conversion, so we just run the server directly
+ENTRYPOINT []
+CMD ["node", "main.js"]
+

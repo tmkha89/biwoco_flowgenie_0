@@ -1,0 +1,629 @@
+name: Deploy Backend to App Runner
+
+on:
+  push:
+    branches:
+      - main
+      - features/pipeline_backend
+    paths:
+      - 'backend/**'
+      - '.github/workflows/app-runner-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Deployment stage (dev/staging/prod)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+  STAGE: ${{ inputs.stage || 'dev' }}
+  NODE_VERSION: '24'
+
+jobs:
+  # Build and push Docker image to ECR
+  build-and-push-ecr:
+    name: Build and Push to ECR
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || 'dev' }}
+    
+    outputs:
+      ecr_image_uri: ${{ steps.build-ecr.outputs.ecr_image_uri }}
+      ecr_repository: ${{ steps.build-ecr.outputs.ecr_repository }}
+      image_tag: ${{ steps.build-ecr.outputs.image_tag }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          echo "Installing backend dependencies..."
+          npm ci
+          echo "Dependencies installed successfully"
+
+      - name: Build backend
+        working-directory: ./backend
+        env:
+          NODE_ENV: production
+        run: |
+          echo "Building backend application..."
+          npm run build
+          
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo "ERROR: Build completed but dist folder is empty or missing"
+            exit 1
+          fi
+          
+          # Verify main.js is built (NestJS builds to dist/src/)
+          if [ ! -f "dist/src/main.js" ]; then
+            echo "ERROR: main.js not found in dist/src/ after build"
+            echo "Checking what files were built:"
+            find dist -name "*.js" -type f | head -20
+            exit 1
+          fi
+          
+          echo "✅ Build completed successfully"
+          echo "✅ main.js found in dist/src/"
+          ls -lh dist/src/main.js
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get ECR repository URI
+        id: ecr-repo
+        run: |
+          STAGE="${{ env.STAGE }}"
+          REPO_NAME="${STAGE}-flowgenie-backend"
+          
+          echo "Target ECR repository: $REPO_NAME"
+          
+          # Check if repository exists (should be created by Terraform)
+          if ! aws ecr describe-repositories --repository-names "$REPO_NAME" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "ERROR: ECR repository '$REPO_NAME' does not exist"
+            echo "Please run infrastructure deployment first (infra-deploy workflow)"
+            exit 1
+          fi
+          
+          # Get repository URI
+          REPO_URI=$(aws ecr describe-repositories \
+            --repository-names "$REPO_NAME" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'repositories[0].repositoryUri' \
+            --output text)
+          
+          echo "✅ ECR Repository found: $REPO_URI"
+          echo "ecr_repository=$REPO_URI" >> $GITHUB_ENV
+          echo "ecr_repo_name=$REPO_NAME" >> $GITHUB_ENV
+
+      - name: Build, tag, and push Docker image to Amazon ECR
+        id: build-ecr
+        working-directory: ./backend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.ecr_repo_name }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Building Docker image..."
+          echo "Repository: $ECR_REPOSITORY"
+          echo "Tag: $IMAGE_TAG"
+          echo ""
+          
+          # Verify we're using the correct Dockerfile (not Dockerfile.lambda)
+          if [ ! -f Dockerfile ]; then
+            echo "ERROR: Dockerfile not found in backend directory"
+            exit 1
+          fi
+          
+          # Verify Dockerfile doesn't contain Lambda-specific configurations
+          if grep -qi "lambda\|aws-lambda" Dockerfile; then
+            echo "ERROR: Dockerfile contains Lambda-specific configurations. This should not be used for App Runner."
+            exit 1
+          fi
+          
+          echo "✅ Using standard Dockerfile for App Runner (not Dockerfile.lambda)"
+          echo ""
+          
+          docker build \
+            -f Dockerfile \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
+          
+          echo ""
+          echo "Pushing Docker image to ECR..."
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo ""
+          echo "✅ Docker image pushed successfully"
+          echo "  Image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "  Latest: $ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          
+          echo "ecr_image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "ecr_repository=$ECR_REGISTRY/$ECR_REPOSITORY" >> $GITHUB_OUTPUT
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          
+          echo "ecr_image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Display build summary
+        run: |
+          echo "## 🐳 Docker Image Built and Pushed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**ECR Repository:** \`${{ steps.build-ecr.outputs.ecr_repository }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** \`${{ steps.build-ecr.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image URI:** \`${{ steps.build-ecr.outputs.ecr_image_uri }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Docker image successfully pushed to ECR repository: \`${{ env.STAGE }}-flowgenie-backend\`" >> $GITHUB_STEP_SUMMARY
+
+  # Deploy Backend to App Runner
+  deploy-app-runner:
+    name: Deploy Backend to App Runner
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || 'dev' }}
+    needs: update-app-runner-env
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Set ECR image URI from build job
+        run: |
+          echo "Using Docker image from build job:"
+          echo "  Image URI: ${{ needs.build-and-push-ecr.outputs.ecr_image_uri }}"
+          echo "ecr_image_uri=${{ needs.build-and-push-ecr.outputs.ecr_image_uri }}" >> $GITHUB_ENV
+
+      - name: Get App Runner service details
+        id: get-app-runner
+        run: |
+          STAGE="${{ env.STAGE }}"
+          SERVICE_NAME="${STAGE}-flowgenie-apprunner-backend"
+          
+          echo "Checking App Runner service: $SERVICE_NAME"
+          
+          # Get service ARN
+          SERVICE_ARN=$(aws apprunner list-services \
+            --region ${{ env.AWS_REGION }} \
+            --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" \
+            --output text)
+          
+          if [ -z "$SERVICE_ARN" ] || [ "$SERVICE_ARN" == "None" ]; then
+            echo "ERROR: App Runner service '$SERVICE_NAME' does not exist"
+            echo "Please run infrastructure deployment first (infra-deploy workflow)"
+            exit 1
+          fi
+          
+          # Describe service and suppress Web ACL warnings (Web ACL is optional)
+          SERVICE_URL=$(aws apprunner describe-service \
+            --service-arn "$SERVICE_ARN" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Service.ServiceUrl' \
+            --output text 2>&1 | grep -v "Error while retrieving Web ACL" | grep -E "^https://" | head -1 || true)
+          
+          echo "App Runner Service ARN: $SERVICE_ARN"
+          echo "App Runner Service URL: $SERVICE_URL"
+          echo "service_arn=$SERVICE_ARN" >> $GITHUB_ENV
+          echo "service_url=$SERVICE_URL" >> $GITHUB_ENV
+          
+          echo "✅ App Runner service found"
+          echo "Service URL: $SERVICE_URL"
+
+      - name: Wait for App Runner to deploy new image
+        run: |
+          SERVICE_ARN="${{ env.service_arn }}"
+          MAX_WAIT=600
+          ELAPSED=0
+          
+          echo "Waiting for App Runner to deploy new image..."
+          echo "App Runner will automatically deploy when new image is pushed to ECR"
+          echo "(Auto-deploy must be enabled in App Runner configuration)"
+          
+          # Wait for deployment to start (check if new deployment is in progress)
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            # Get current operation status
+            OPERATION_STATUS=$(aws apprunner list-operations \
+              --service-arn "$SERVICE_ARN" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'OperationSummaryList[0].Status' \
+              --output text 2>/dev/null || echo "UNKNOWN")
+            
+            if [ "$OPERATION_STATUS" == "IN_PROGRESS" ] || [ "$OPERATION_STATUS" == "PENDING" ]; then
+              echo "Deployment in progress... (Status: $OPERATION_STATUS, Elapsed: ${ELAPSED}s)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            else
+              echo "Deployment status: $OPERATION_STATUS"
+              break
+            fi
+          done
+          
+          # Get service status (suppress Web ACL warnings - Web ACL is optional)
+          SERVICE_STATUS=$(aws apprunner describe-service \
+            --service-arn "$SERVICE_ARN" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Service.Status' \
+            --output text 2>&1 | grep -v "Error while retrieving Web ACL" | grep -E "^[A-Z_]+$" | head -1 || echo "UNKNOWN")
+          
+          echo "App Runner Service Status: $SERVICE_STATUS"
+          
+          if [ "$SERVICE_STATUS" == "RUNNING" ]; then
+            echo "✅ App Runner service is running"
+          else
+            echo "⚠️  App Runner service status: $SERVICE_STATUS"
+          fi
+
+      - name: Display deployment information
+        run: |
+          echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**App Runner Service:** ${{ env.STAGE }}-flowgenie-backend" >> $GITHUB_STEP_SUMMARY
+          echo "**Service URL:** ${{ env.service_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Source:** ECR Docker Image" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ needs.build-and-push-ecr.outputs.ecr_image_uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Backend deployed successfully to App Runner" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Note: App Runner automatically deploys when new images are pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "(Auto-deploy must be enabled in App Runner configuration)" >> $GITHUB_STEP_SUMMARY
+
+  # Update App Runner Environment Variables
+  update-app-runner-env:
+    name: Update App Runner Environment Variables
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage || 'dev' }}
+    needs: build-and-push-ecr
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get App Runner service details
+        id: get-app-runner
+        run: |
+          STAGE="${{ env.STAGE }}"
+          SERVICE_NAME="${STAGE}-flowgenie-apprunner-backend"
+          
+          echo "Checking App Runner service: $SERVICE_NAME"
+          
+          # Get service ARN
+          SERVICE_ARN=$(aws apprunner list-services \
+            --region ${{ env.AWS_REGION }} \
+            --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" \
+            --output text)
+          
+          if [ -z "$SERVICE_ARN" ] || [ "$SERVICE_ARN" == "None" ]; then
+            echo "ERROR: App Runner service '$SERVICE_NAME' does not exist"
+            exit 1
+          fi
+          
+          # Describe service and suppress Web ACL warnings (Web ACL is optional)
+          SERVICE_URL=$(aws apprunner describe-service \
+            --service-arn "$SERVICE_ARN" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Service.ServiceUrl' \
+            --output text 2>&1 | grep -v "Error while retrieving Web ACL" | grep -E "^https://" | head -1 || true)
+          
+          echo "App Runner Service ARN: $SERVICE_ARN"
+          echo "App Runner Service URL: $SERVICE_URL"
+          echo "service_arn=$SERVICE_ARN" >> $GITHUB_ENV
+          echo "service_url=$SERVICE_URL" >> $GITHUB_ENV
+          
+          echo "✅ App Runner service found"
+          echo "Service URL: $SERVICE_URL"
+
+      - name: Update App Runner environment variables
+        env:
+          # Secrets from GitHub Secrets
+          APP_URL: ${{ secrets.APP_URL }}
+          AWS_DYNAMODB: ${{ secrets.AWS_DYNAMODB }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DEVOPS_TOKEN: ${{ secrets.DEVOPS_TOKEN }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          REDIS_AUTH_TOKEN: ${{ secrets.REDIS_AUTH_TOKEN }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+          # Variables from GitHub Variables
+          AMPLIFY_BRANCH_NAME: ${{ vars.AMPLIFY_BRANCH_NAME }}
+          AMPLIFY_DOMAIN: ${{ vars.AMPLIFY_DOMAIN }}
+          AMPLIFY_REPOSITORY_URL: ${{ vars.AMPLIFY_REPOSITORY_URL }}
+          BACKEND_ENVIRONMENT_VARIABLES: ${{ vars.BACKEND_ENVIRONMENT_VARIABLES }}
+          DB_NAME: ${{ vars.DB_NAME }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          ENABLE_SWAGGER: ${{ vars.ENABLE_SWAGGER }}
+          FRONTEND_ENVIRONMENT_VARIABLES: ${{ vars.FRONTEND_ENVIRONMENT_VARIABLES }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          GOOGLE_PROJECT_NAME: ${{ vars.GOOGLE_PROJECT_NAME }}
+          GOOGLE_REDIRECT_URI: ${{ vars.GOOGLE_REDIRECT_URI }}
+          JWT_EXPIRES_IN: ${{ vars.JWT_EXPIRES_IN }}
+          REFRESH_TOKEN_EXPIRES_IN: ${{ vars.REFRESH_TOKEN_EXPIRES_IN }}
+          STAGE_VAR: ${{ vars.STAGE }}
+        run: |
+          SERVICE_ARN="${{ env.service_arn }}"
+          STAGE="${{ env.STAGE }}"
+          
+          # Ensure jq is available
+          if ! command -v jq &> /dev/null; then
+            echo "jq is required but not installed. Installing..."
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+          
+          echo "Updating App Runner environment variables from GitHub Secrets and Variables..."
+          
+          # Get current App Runner service configuration
+          # Suppress Web ACL warnings (Web ACL is optional and may not be configured)
+          SERVICE_CONFIG=$(aws apprunner describe-service \
+            --service-arn "$SERVICE_ARN" \
+            --region ${{ env.AWS_REGION }} \
+            --output json 2>&1 | grep -v "Error while retrieving Web ACL" || true)
+          
+          # Extract JSON from output (in case warning was mixed in)
+          SERVICE_CONFIG=$(echo "$SERVICE_CONFIG" | jq -c '.' 2>/dev/null || echo "$SERVICE_CONFIG" | grep -o '{.*}' | head -1)
+          
+          CURRENT_ENV=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentVariables // {}')
+          
+          echo "Current App Runner environment variables:"
+          echo "$CURRENT_ENV" | jq '.'
+          
+          # Start with current environment variables
+          UPDATED_ENV=$(echo "$CURRENT_ENV" | jq -c '.')
+          
+          # List of all secrets to inject (from GitHub Secrets)
+          SECRETS=(
+            "APP_URL"
+            "AWS_DYNAMODB"
+            "CORS_ORIGINS"
+            "DATABASE_URL"
+            "DB_PASSWORD"
+            "DEVOPS_TOKEN"
+            "FRONTEND_URL"
+            "GOOGLE_APPLICATION_CREDENTIALS"
+            "GOOGLE_CLIENT_SECRET"
+            "GOOGLE_SERVICE_ACCOUNT"
+            "JWT_SECRET"
+            "REDIS_URL"
+            "REDIS_HOST"
+            "REDIS_PORT"
+            "REDIS_AUTH_TOKEN"
+          )
+          
+          # List of all variables to inject (from GitHub Variables)
+          VARIABLES=(
+            "AMPLIFY_BRANCH_NAME"
+            "AMPLIFY_DOMAIN"
+            "AMPLIFY_REPOSITORY_URL"
+            "BACKEND_ENVIRONMENT_VARIABLES"
+            "DB_NAME"
+            "DB_USERNAME"
+            "ENABLE_SWAGGER"
+            "FRONTEND_ENVIRONMENT_VARIABLES"
+            "GOOGLE_CLIENT_ID"
+            "GOOGLE_PROJECT_NAME"
+            "GOOGLE_REDIRECT_URI"
+            "JWT_EXPIRES_IN"
+            "REFRESH_TOKEN_EXPIRES_IN"
+            "STAGE"
+          )
+          
+          # Inject secrets
+          echo ""
+          echo "🔐 Injecting secrets from GitHub Secrets..."
+          for secret_name in "${SECRETS[@]}"; do
+            # Get the value from environment (mapped from secrets)
+            secret_value=$(eval echo \$$secret_name)
+            
+            if [ -n "$secret_value" ] && [ "$secret_value" != "" ]; then
+              echo "  Setting $secret_name (masked)"
+              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg key "$secret_name" --arg value "$secret_value" '. + {($key): $value}')
+            else
+              echo "  ⚠️  $secret_name not set in GitHub Secrets, skipping"
+            fi
+          done
+          
+          # Inject variables
+          echo ""
+          echo "📝 Injecting variables from GitHub Variables..."
+          for var_name in "${VARIABLES[@]}"; do
+            # Handle special case: STAGE_VAR -> STAGE
+            env_var_name="$var_name"
+            if [ "$var_name" = "STAGE" ]; then
+              env_var_name="STAGE_VAR"
+            fi
+            
+            # Get the value from environment (mapped from vars)
+            var_value=$(eval echo \$$env_var_name)
+            
+            if [ -n "$var_value" ] && [ "$var_value" != "" ]; then
+              echo "  Setting $var_name = $var_value"
+              UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg key "$var_name" --arg value "$var_value" '. + {($key): $value}')
+            else
+              echo "  ⚠️  $var_name not set in GitHub Variables, skipping"
+            fi
+          done
+          
+          # Set NODE_ENV based on STAGE if not already set
+          if [ -z "$(echo "$UPDATED_ENV" | jq -r '.NODE_ENV // empty')" ]; then
+            NODE_ENV_VALUE="production"
+            if [ "$STAGE" != "prod" ]; then
+              NODE_ENV_VALUE="$STAGE"
+            fi
+            echo "  Setting NODE_ENV=$NODE_ENV_VALUE"
+            UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c --arg env "$NODE_ENV_VALUE" '. + {NODE_ENV: $env}')
+          fi
+          
+          # Ensure PORT environment variable is set to 3000 (matching Dockerfile EXPOSE and application default)
+          echo "  Ensuring PORT=3000 (matching Dockerfile EXPOSE)"
+          UPDATED_ENV=$(echo "$UPDATED_ENV" | jq -c '. + {PORT: "3000"}')
+          
+          # Get current service configuration to preserve other settings
+          IMAGE_URI=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.ImageRepository.ImageIdentifier')
+          ACCESS_ROLE_ARN=$(echo "$SERVICE_CONFIG" | jq -r '.Service.SourceConfiguration.AuthenticationConfiguration.AccessRoleArn')
+          # Always use port 3000 (matching Dockerfile EXPOSE 3000 and application default)
+          # This ensures the container port matches what the app is listening on
+          PORT="3000"
+          
+          echo "Container port will be set to: $PORT (matching Dockerfile EXPOSE and PORT env var)"
+          
+          # Create update configuration JSON
+          # Note: update-service expects SourceConfiguration at the top level, not nested
+          # Port must be a string, not a number
+          UPDATE_CONFIG=$(jq -n \
+            --arg image_uri "$IMAGE_URI" \
+            --arg access_role_arn "$ACCESS_ROLE_ARN" \
+            --arg port "$PORT" \
+            --argjson env_vars "$UPDATED_ENV" \
+            '{
+              "ImageRepository": {
+                "ImageIdentifier": $image_uri,
+                "ImageConfiguration": {
+                  "Port": $port,
+                  "RuntimeEnvironmentVariables": $env_vars
+                },
+                "ImageRepositoryType": "ECR"
+              },
+              "AuthenticationConfiguration": {
+                "AccessRoleArn": $access_role_arn
+              },
+              "AutoDeploymentsEnabled": true
+            }')
+          
+          # Check if update is needed
+          CURRENT_ENV_STR=$(echo "$CURRENT_ENV" | jq -c -S '.')
+          UPDATED_ENV_STR=$(echo "$UPDATED_ENV" | jq -c -S '.')
+          
+          if [ "$CURRENT_ENV_STR" != "$UPDATED_ENV_STR" ]; then
+            echo ""
+            echo "Updating App Runner service environment variables..."
+            
+            # Save update config to temp file
+            UPDATE_CONFIG_FILE=$(mktemp)
+            echo "$UPDATE_CONFIG" > "$UPDATE_CONFIG_FILE"
+            
+            # Update App Runner service with both source configuration and health check
+            # Note: --source-configuration expects JSON with ImageRepository/AuthenticationConfiguration at root
+            # Also update health check to ensure HTTP protocol is used
+            aws apprunner update-service \
+              --service-arn "$SERVICE_ARN" \
+              --source-configuration "file://$UPDATE_CONFIG_FILE" \
+              --health-check-configuration Protocol=HTTP,Path=/health,Interval=10,Timeout=10,HealthyThreshold=1,UnhealthyThreshold=10 \
+              --region ${{ env.AWS_REGION }} > /dev/null
+            
+            echo "✅ App Runner service environment variables updated"
+            echo "Waiting for service update to complete..."
+            
+            # Wait for service update to complete (polling)
+            MAX_WAIT=1200  # 20 minutes
+            ELAPSED=0
+            UPDATE_STATUS=""
+            
+            while [ $ELAPSED -lt $MAX_WAIT ]; do
+              # Get current operation status
+              OPERATION_STATUS=$(aws apprunner list-operations \
+                --service-arn "$SERVICE_ARN" \
+                --region ${{ env.AWS_REGION }} \
+                --query 'OperationSummaryList[0].Status' \
+                --output text 2>/dev/null || echo "UNKNOWN")
+              
+              # Get service status (suppress Web ACL warnings)
+              SERVICE_STATUS=$(aws apprunner describe-service \
+                --service-arn "$SERVICE_ARN" \
+                --region ${{ env.AWS_REGION }} \
+                --query 'Service.Status' \
+                --output text 2>&1 | grep -v "Error while retrieving Web ACL" | grep -E "^[A-Z_]+$" | head -1 || echo "UNKNOWN")
+              
+              echo "  Operation Status: $OPERATION_STATUS | Service Status: $SERVICE_STATUS (Elapsed: ${ELAPSED}s)"
+              
+              # Check if update is complete
+              if [ "$OPERATION_STATUS" != "IN_PROGRESS" ] && [ "$OPERATION_STATUS" != "PENDING" ]; then
+                if [ "$SERVICE_STATUS" == "RUNNING" ]; then
+                  echo "✅ App Runner service update completed successfully"
+                  UPDATE_STATUS="SUCCESS"
+                  break
+                elif [ "$SERVICE_STATUS" == "CREATE_FAILED" ] || [ "$SERVICE_STATUS" == "UPDATE_FAILED" ]; then
+                  echo "❌ App Runner service update failed with status: $SERVICE_STATUS"
+                  UPDATE_STATUS="FAILED"
+                  break
+                fi
+              fi
+              
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+            
+            if [ "$UPDATE_STATUS" == "SUCCESS" ]; then
+              echo "✅ Service is now running with updated configuration"
+            elif [ "$UPDATE_STATUS" == "FAILED" ]; then
+              echo "❌ Service update failed. Check AWS Console for details."
+              exit 1
+            else
+              echo "⚠️  Timeout waiting for service update (waited ${MAX_WAIT}s)"
+              echo "Current status: Operation=$OPERATION_STATUS, Service=$SERVICE_STATUS"
+              echo "Service may still be updating. Check AWS Console for current status."
+            fi
+            
+            # Clean up temp file
+            rm -f "$UPDATE_CONFIG_FILE"
+          else
+            echo ""
+            echo "✅ No changes detected - environment variables are up to date"
+          fi
+          
+          echo ""
+          echo "Updated App Runner environment variables:"
+          echo "$UPDATED_ENV" | jq '.'
+
+      - name: Display environment variables update summary
+        run: |
+          echo "## ✅ Environment Variables Updated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**App Runner Service:** ${{ env.STAGE }}-flowgenie-backend" >> $GITHUB_STEP_SUMMARY
+          echo "**Service URL:** ${{ env.service_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Environment variables updated from GitHub Secrets and Variables" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Note: App Runner automatically deploys when new images are pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "(Auto-deploy must be enabled in App Runner configuration)" >> $GITHUB_STEP_SUMMARY

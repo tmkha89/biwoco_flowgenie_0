@@ -1,0 +1,13 @@
+version: 1.0
+runtime: docker
+build:
+  commands:
+    build:
+      - docker build -t apprunner-image -f backend/Dockerfile backend/
+run:
+  runtime-version: docker
+  command: docker run -p 3000:3000 apprunner-image
+  network:
+    port: 3000
+    env: PORT
+    

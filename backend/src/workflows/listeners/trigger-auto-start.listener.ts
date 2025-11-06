@@ -38,20 +38,29 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
     this.logger.log('TriggerAutoStartListener initializing...');
 
     try {
-      // Start all trigger listeners
-      await this.startAllTriggerListeners();
+      // Start all trigger listeners (non-blocking - don't fail if database isn't ready)
+      // This allows the app to start even if database connection isn't ready yet
+      this.startAllTriggerListeners().catch((error: any) => {
+        this.logger.warn(
+          `⚠️ Failed to start trigger listeners (database may not be ready): ${error.message}`,
+        );
+        this.logger.warn('Trigger listeners will be retried automatically...');
+      });
 
-      // Start health check and restart mechanism
+      // Start health check and restart mechanism (non-blocking)
       this.startHealthCheck();
 
+      // Mark as initialized even if database queries failed
+      // This allows the app to start and respond to health checks
       this.isInitialized = true;
-      this.logger.log('✅ TriggerAutoStartListener initialized successfully');
+      this.logger.log('✅ TriggerAutoStartListener initialized (listeners will start when database is ready)');
     } catch (error: any) {
-      this.logger.error(
-        `❌ Failed to initialize TriggerAutoStartListener: ${error.message}`,
+      this.logger.warn(
+        `⚠️ Error during TriggerAutoStartListener initialization: ${error.message}`,
       );
-      // Retry after a delay
-      setTimeout(() => this.onModuleInit(), 10000);
+      this.logger.warn('Application will continue to start. Trigger listeners will retry...');
+      // Don't retry immediately - let the health check mechanism handle retries
+      this.isInitialized = false;
     }
   }
 
@@ -73,6 +82,15 @@ export class TriggerAutoStartListener implements OnModuleInit, OnModuleDestroy {
     this.logger.log('Starting all trigger listeners...');
 
     try {
+      // Check if database is connected before querying
+      try {
+        await this.prisma.$queryRaw`SELECT 1`;
+      } catch (dbError: any) {
+        this.logger.warn(`⚠️ Database not ready yet: ${dbError.message}`);
+        this.logger.warn('Skipping trigger listener startup - will retry later');
+        throw new Error('Database connection not available');
+      }
+
       // Find all enabled workflows with triggers
       const workflows = await this.prisma.workflow.findMany({
         where: {

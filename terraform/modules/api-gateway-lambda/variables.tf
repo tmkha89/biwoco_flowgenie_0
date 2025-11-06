@@ -59,28 +59,16 @@ variable "db_password" {
   sensitive   = true
 }
 
-variable "lambda_deployment_package" {
-  description = "Path to Lambda deployment package"
+variable "lambda_image_uri" {
+  description = "ECR image URI for Lambda container image. If not provided, will use a placeholder based on stage and region. CI/CD pipeline manages actual image updates."
   type        = string
-  default     = "lambda-api.zip"
-}
-
-variable "lambda_handler" {
-  description = "Lambda handler"
-  type        = string
-  default     = "index.handler"
-}
-
-variable "lambda_runtime" {
-  description = "Lambda runtime"
-  type        = string
-  default     = "nodejs20.x"
+  default     = ""
 }
 
 variable "lambda_timeout" {
-  description = "Lambda timeout in seconds"
+  description = "Lambda timeout in seconds. For VPC-configured Lambdas, use at least 60-90 seconds to account for cold starts and ENI attachment delays. Maximum is 900 seconds (15 minutes)."
   type        = number
-  default     = 30
+  default     = 300
 }
 
 variable "lambda_memory_size" {
@@ -100,5 +88,33 @@ variable "tags" {
   description = "Tags to apply to resources"
   type        = map(string)
   default     = {}
+}
+
+variable "api_gateway_logging_level" {
+  description = "Logging level for API Gateway execution logs. Options: OFF, ERROR, INFO"
+  type        = string
+  default     = "INFO"
+  validation {
+    condition     = contains(["OFF", "ERROR", "INFO"], var.api_gateway_logging_level)
+    error_message = "api_gateway_logging_level must be one of: OFF, ERROR, INFO"
+  }
+}
+
+variable "enable_xray_tracing" {
+  description = "Enable X-Ray tracing for API Gateway"
+  type        = bool
+  default     = false
+}
+
+variable "api_gateway_throttling_burst_limit" {
+  description = "Throttling burst limit for API Gateway"
+  type        = number
+  default     = 5000
+}
+
+variable "api_gateway_throttling_rate_limit" {
+  description = "Throttling rate limit for API Gateway (requests per second)"
+  type        = number
+  default     = 10000
 }
 

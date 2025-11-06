@@ -4,36 +4,64 @@ output "amplify_app_id" {
   value       = module.amplify.app_id
 }
 
-output "amplify_arn" {
-  description = "Amplify App ARN"
-  value       = module.amplify.app_arn
+# API Gateway Outputs (DISABLED - using App Runner instead)
+# output "api_gateway_url" {
+#   description = "API Gateway endpoint URL"
+#   value       = module.api.api_url
+# }
+#
+# output "api_gateway_arn" {
+#   description = "API Gateway ARN"
+#   value       = module.api.api_arn
+# }
+#
+# output "api_gateway_rest_api_id" {
+#   description = "API Gateway REST API ID"
+#   value       = module.api.rest_api_id
+# }
+
+# App Runner Outputs
+output "app_runner_service_url" {
+  description = "App Runner service URL"
+  value       = module.app_runner.service_url
 }
 
-output "amplify_app_url" {
-  description = "Amplify App URL"
-  value       = module.amplify.app_url
+output "app_runner_service_arn" {
+  description = "App Runner service ARN"
+  value       = module.app_runner.service_arn
 }
 
-output "amplify_domain_url" {
-  description = "Amplify Domain URL (if custom domain is configured)"
-  value       = module.amplify.domain_url
+output "app_runner_service_id" {
+  description = "App Runner service ID"
+  value       = module.app_runner.service_id
 }
 
-# API Gateway Outputs
-output "api_gateway_url" {
-  description = "API Gateway endpoint URL"
-  value       = module.api.api_url
+output "app_runner_ecr_repository_url" {
+  description = "App Runner ECR Repository URL"
+  value       = module.app_runner.ecr_repository_url
 }
 
-output "api_gateway_arn" {
-  description = "API Gateway ARN"
-  value       = module.api.api_arn
+output "app_runner_vpc_connector_arn" {
+  description = "App Runner VPC Connector ARN"
+  value       = module.app_runner.vpc_connector_arn
 }
 
-output "api_gateway_rest_api_id" {
-  description = "API Gateway REST API ID"
-  value       = module.api.rest_api_id
-}
+# App Runner Lambda Image Instance Outputs
+# DISABLED: Commented out since app_runner_lambda_image module is disabled
+# output "app_runner_func_service_url" {
+#   description = "App Runner service URL (using Lambda ECR image)"
+#   value       = module.app_runner_lambda_image.service_url
+# }
+#
+# output "app_runner_func_service_arn" {
+#   description = "App Runner service ARN (using Lambda ECR image)"
+#   value       = module.app_runner_lambda_image.service_arn
+# }
+#
+# output "app_runner_func_service_id" {
+#   description = "App Runner service ID (using Lambda ECR image)"
+#   value       = module.app_runner_lambda_image.service_id
+# }
 
 # RDS Outputs
 output "rds_endpoint" {
