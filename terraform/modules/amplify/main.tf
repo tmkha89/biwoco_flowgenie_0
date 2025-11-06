@@ -1,4 +1,11 @@
 # Amplify App
+# 
+# NOTE: If you encounter "Rate exceeded while calling CreateApp" error:
+# - This is an AWS API rate limit (typically 5-10 requests per minute)
+# - Wait 1-2 minutes and retry the Terraform apply
+# - Or use: terraform apply -target=module.amplify.aws_amplify_app.main
+# - The rate limit resets after a few minutes
+#
 resource "aws_amplify_app" "main" {
   name       = "${var.stage}-flowgenie-frontend"
   repository = var.repository_url
