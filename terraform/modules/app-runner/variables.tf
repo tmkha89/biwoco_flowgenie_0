@@ -24,6 +24,12 @@ variable "security_group_ids" {
   type        = list(string)
 }
 
+variable "existing_vpc_connector_arn" {
+  description = "ARN of existing VPC connector to reuse (optional). If provided, will not create a new VPC connector."
+  type        = string
+  default     = ""
+}
+
 variable "rds_endpoint" {
   description = "RDS endpoint"
   type        = string

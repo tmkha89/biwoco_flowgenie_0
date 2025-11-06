@@ -19,13 +19,13 @@ output "service_name" {
 }
 
 output "vpc_connector_arn" {
-  description = "VPC Connector ARN"
-  value       = aws_apprunner_vpc_connector.main.arn
+  description = "VPC Connector ARN (either existing or newly created)"
+  value       = local.vpc_connector_arn
 }
 
 output "vpc_connector_id" {
-  description = "VPC Connector ID"
-  value       = aws_apprunner_vpc_connector.main.id
+  description = "VPC Connector ID (only if connector was created)"
+  value       = var.existing_vpc_connector_arn == "" ? aws_apprunner_vpc_connector.main[0].id : ""
 }
 
 output "ecr_repository_url" {

@@ -6,6 +6,14 @@ resource "aws_amplify_app" "main" {
   # Environment variables - use map attribute, not dynamic block
   environment_variables = var.environment_variables
 
+  # Lifecycle rule to ignore repository changes if app already exists
+  # This prevents errors when manually deployed branches exist
+  lifecycle {
+    ignore_changes = [
+      repository,
+    ]
+  }
+
   # Build specification
   build_spec = <<-EOF
     version: 1

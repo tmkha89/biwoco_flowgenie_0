@@ -32,6 +32,10 @@ locals {
   vpc_connector_name_base = var.service_name != "" ? replace(var.service_name, "apprunner", "ar") : "${var.stage}-flowgenie"
   # Ensure it fits within 40 chars (leave room for "-vpc" suffix)
   vpc_connector_name = length("${local.vpc_connector_name_base}-vpc") > 40 ? "${substr(local.vpc_connector_name_base, 0, 36)}-vpc" : "${local.vpc_connector_name_base}-vpc"
+  
+  # VPC connector ARN (either existing or newly created)
+  # If existing_vpc_connector_arn is provided, use it; otherwise use the created connector
+  vpc_connector_arn = var.existing_vpc_connector_arn != "" ? var.existing_vpc_connector_arn : (length(aws_apprunner_vpc_connector.main) > 0 ? aws_apprunner_vpc_connector.main[0].arn : "")
 }
 
 # IAM Role for App Runner to access ECR
@@ -109,7 +113,6 @@ resource "aws_apprunner_service" "backend" {
 
   depends_on = [
     aws_iam_role_policy_attachment.apprunner_access,
-    aws_apprunner_vpc_connector.main
   ]
 
   instance_configuration {
@@ -127,7 +130,7 @@ resource "aws_apprunner_service" "backend" {
     }
     egress_configuration {
       egress_type       = "VPC"
-      vpc_connector_arn = aws_apprunner_vpc_connector.main.arn
+      vpc_connector_arn = local.vpc_connector_arn
     }
   }
 
@@ -150,7 +153,13 @@ resource "aws_apprunner_service" "backend" {
 
 # VPC Connector for App Runner (allows access to RDS and Redis)
 # VPC connector name must be 4-40 characters
+# Name includes service name to ensure uniqueness per App Runner service
+# Note: AWS doesn't allow duplicate VPC connectors with the same security groups/subnets
+# If using existing_vpc_connector_arn, this resource will not be created
+# If you get an error about existing connector, import it: terraform import module.app_runner.aws_apprunner_vpc_connector.main <vpc-connector-arn>
 resource "aws_apprunner_vpc_connector" "main" {
+  count = var.existing_vpc_connector_arn == "" ? 1 : 0
+
   vpc_connector_name = local.vpc_connector_name
   subnets            = var.subnet_ids
   security_groups    = var.security_group_ids
@@ -158,10 +167,17 @@ resource "aws_apprunner_vpc_connector" "main" {
   tags = merge(
     var.tags,
     {
-      Name = "${var.stage}-flowgenie-vpc-connector"
+      Name = var.service_name != "" ? "${var.service_name}-vpc-connector" : "${var.stage}-flowgenie-vpc-connector"
     }
   )
+
+  # Lifecycle rule to handle existing resources
+  # If importing existing VPC connector, Terraform will match it by ARN/ID
+  lifecycle {
+    create_before_destroy = true
+  }
 }
+
 
 
 # IAM Role for App Runner instances

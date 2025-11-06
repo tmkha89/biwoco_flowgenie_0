@@ -161,6 +161,7 @@ module "app_runner" {
 }
 
 # App Runner Module for Backend (using existing ECR repository dev-flowgenie-func)
+# Reuses the VPC connector from the first App Runner service since both use the same security groups/subnets
 module "app_runner_lambda_image" {
   source = "./modules/app-runner"
 
@@ -171,6 +172,9 @@ module "app_runner_lambda_image" {
   use_existing_ecr            = true
   existing_ecr_repository_name = "${var.stage}-flowgenie-func"
   service_name                = "${var.stage}-flowgenie-apprunner-func"
+
+  # Reuse VPC connector from first App Runner service (same security groups/subnets)
+  existing_vpc_connector_arn = module.app_runner.vpc_connector_arn
 
   vpc_id             = module.vpc.vpc_id
   subnet_ids         = module.vpc.private_subnet_ids
