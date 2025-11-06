@@ -19,6 +19,10 @@ resource "aws_amplify_app" "main" {
           commands:
             - cd frontend
             - npm run build
+            - echo "Verifying _redirects file in dist..."
+            - ls -la dist/ | grep -i redirects || echo "WARNING: _redirects file not found in dist"
+            - if [ -f public/_redirects ]; then cp public/_redirects dist/_redirects && echo "✅ _redirects file copied to dist"; fi
+            - if [ -f dist/_redirects ]; then echo "✅ _redirects file exists in dist:" && cat dist/_redirects; else echo "⚠️ Creating _redirects file in dist..." && echo "/*    /index.html   200" > dist/_redirects && echo "✅ Created _redirects file"; fi
       artifacts:
         baseDirectory: frontend/dist
         files:
