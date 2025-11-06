@@ -185,7 +185,7 @@ jobs:
     name: Deploy Backend to App Runner
     runs-on: ubuntu-latest
     environment: ${{ inputs.stage || 'dev' }}
-    needs: build-and-push-ecr
+    needs: update-app-runner-env
     
     steps:
       - name: Checkout code
@@ -302,7 +302,7 @@ jobs:
     name: Update App Runner Environment Variables
     runs-on: ubuntu-latest
     environment: ${{ inputs.stage || 'dev' }}
-    needs: deploy-app-runner
+    needs: build-and-push-ecr
     
     steps:
       - name: Checkout code

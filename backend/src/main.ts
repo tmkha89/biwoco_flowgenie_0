@@ -167,22 +167,25 @@ async function bootstrap() {
 
   // Log before attempting to listen (helps debug if listen hangs)
   logger.log(`All routes registered, attempting to start server on port ${port}...`);
-  logger.log(`Waiting for app.listen() to complete...`);
   
-  // Add a timeout wrapper around app.listen() to detect if it hangs
-  const listenPromise = app.listen(port, '0.0.0.0');
-  const listenTimeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`app.listen() timeout after 30 seconds on port ${port}`)), 30000)
-  );
-  
+  // Start the server
   try {
-    await Promise.race([listenPromise, listenTimeout]);
+    // NestJS app.listen() returns a Promise that resolves when the server starts listening
+    logger.log(`Calling app.listen(${port}, '0.0.0.0')...`);
+    const httpServer = await app.listen(port, '0.0.0.0');
+    logger.log(`✅ app.listen() completed successfully`);
+    logger.log(`HTTP Server address: ${JSON.stringify(httpServer.address())}`);
+    
     const protocol = certFile && keyFile ? 'https' : 'http';
     logger.log(`🚀 Application is running on: ${protocol}://0.0.0.0:${port}`);
     logger.log(`✅ Health check endpoint available at: ${protocol}://0.0.0.0:${port}/health`);
+    console.log(`🚀 Application is running on: ${protocol}://0.0.0.0:${port}`);
+    console.log(`✅ Health check endpoint available at: ${protocol}://0.0.0.0:${port}/health`);
   } catch (error) {
     logger.error(`❌ Failed to start application: ${error.message}`);
     logger.error(error.stack);
+    console.error(`❌ Failed to start application: ${error.message}`);
+    console.error(error.stack);
     process.exit(1);
   }
 }
