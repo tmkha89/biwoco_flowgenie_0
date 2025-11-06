@@ -75,6 +75,8 @@ resource "aws_apprunner_service" "backend" {
       image_identifier      = "${local.ecr_repository_url}:latest"
       image_configuration {
         port = var.container_port
+        # Set minimal environment variables here - full env vars are managed by app deployment pipeline
+        # This prevents Terraform from updating App Runner env vars during infrastructure deployments
         runtime_environment_variables = merge(
           {
             PORT             = tostring(var.container_port)
@@ -93,6 +95,16 @@ resource "aws_apprunner_service" "backend" {
     authentication_configuration {
       access_role_arn = aws_iam_role.apprunner_access.arn
     }
+  }
+
+  # Lifecycle rule to ignore changes to runtime environment variables
+  # This prevents Terraform from updating App Runner env vars during infrastructure deployments
+  # Environment variables should be managed by the application deployment pipeline (app-runner-deploy.yml)
+  lifecycle {
+    ignore_changes = [
+      source_configuration[0].image_repository[0].image_configuration[0].runtime_environment_variables,
+      source_configuration[0].image_repository[0].image_identifier,
+    ]
   }
 
   depends_on = [
