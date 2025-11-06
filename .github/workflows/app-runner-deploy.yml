@@ -133,6 +133,21 @@ jobs:
           echo "Tag: $IMAGE_TAG"
           echo ""
           
+          # Verify we're using the correct Dockerfile (not Dockerfile.lambda)
+          if [ ! -f Dockerfile ]; then
+            echo "ERROR: Dockerfile not found in backend directory"
+            exit 1
+          fi
+          
+          # Verify Dockerfile doesn't contain Lambda-specific configurations
+          if grep -qi "lambda\|aws-lambda" Dockerfile; then
+            echo "ERROR: Dockerfile contains Lambda-specific configurations. This should not be used for App Runner."
+            exit 1
+          fi
+          
+          echo "✅ Using standard Dockerfile for App Runner (not Dockerfile.lambda)"
+          echo ""
+          
           docker build \
             -f Dockerfile \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
@@ -193,7 +208,7 @@ jobs:
         id: get-app-runner
         run: |
           STAGE="${{ env.STAGE }}"
-          SERVICE_NAME="${STAGE}-flowgenie-backend"
+          SERVICE_NAME="${STAGE}-flowgenie-apprunner-backend"
           
           echo "Checking App Runner service: $SERVICE_NAME"
           
@@ -304,7 +319,7 @@ jobs:
         id: get-app-runner
         run: |
           STAGE="${{ env.STAGE }}"
-          SERVICE_NAME="${STAGE}-flowgenie-backend"
+          SERVICE_NAME="${STAGE}-flowgenie-apprunner-backend"
           
           echo "Checking App Runner service: $SERVICE_NAME"
           
@@ -528,11 +543,13 @@ jobs:
             UPDATE_CONFIG_FILE=$(mktemp)
             echo "$UPDATE_CONFIG" > "$UPDATE_CONFIG_FILE"
             
-            # Update App Runner service
+            # Update App Runner service with both source configuration and health check
             # Note: --source-configuration expects JSON with ImageRepository/AuthenticationConfiguration at root
+            # Also update health check to ensure HTTP protocol is used
             aws apprunner update-service \
               --service-arn "$SERVICE_ARN" \
               --source-configuration "file://$UPDATE_CONFIG_FILE" \
+              --health-check-configuration Protocol=HTTP,Path=/health,Interval=10,Timeout=10,HealthyThreshold=1,UnhealthyThreshold=10 \
               --region ${{ env.AWS_REGION }} > /dev/null
             
             echo "✅ App Runner service environment variables updated"

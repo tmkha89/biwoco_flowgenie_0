@@ -123,9 +123,9 @@ resource "aws_apprunner_service" "backend" {
     protocol            = "HTTP"
     path                = "/health"
     interval            = 10
-    timeout             = 5
+    timeout             = 10
     healthy_threshold   = 1
-    unhealthy_threshold = 5
+    unhealthy_threshold = 10
   }
 
   tags = merge(

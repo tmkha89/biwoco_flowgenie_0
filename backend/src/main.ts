@@ -163,9 +163,20 @@ async function bootstrap() {
     console.log('ℹ️  Swagger documentation is disabled (ENABLE_SWAGGER=false)');
   }
 
-  await app.listen(port, '0.0.0.0'); // Listen on all interfaces for Lambda
-  const protocol = certFile && keyFile ? 'https' : 'http';
-  console.log(`🚀 Application is running on: ${protocol}://0.0.0.0:${port}`);
+  try {
+    await app.listen(port, '0.0.0.0'); // Listen on all interfaces
+    const protocol = certFile && keyFile ? 'https' : 'http';
+    console.log(`🚀 Application is running on: ${protocol}://0.0.0.0:${port}`);
+    console.log(`✅ Health check endpoint available at: ${protocol}://0.0.0.0:${port}/health`);
+  } catch (error) {
+    logger.error(`❌ Failed to start application: ${error.message}`);
+    logger.error(error.stack);
+    process.exit(1);
+  }
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  console.error('❌ Fatal error during bootstrap:', error);
+  console.error(error.stack);
+  process.exit(1);
+});
