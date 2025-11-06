@@ -39,7 +39,8 @@ variable "tags" {
 }
 
 variable "devops_token" {
-  description = "Token for access github"
+  description = "GitHub OAuth token or personal access token for Amplify to access the repository (required for private repos or GitHub authentication)"
   type        = string
   default     = ""
+  sensitive   = true
 }

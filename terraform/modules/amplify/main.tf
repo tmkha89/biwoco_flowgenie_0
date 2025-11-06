@@ -3,6 +3,10 @@ resource "aws_amplify_app" "main" {
   name       = "${var.stage}-flowgenie-frontend"
   repository = var.repository_url
   
+  # Token for GitHub repository access (required for GitHub authentication)
+  # Amplify requires either oauth_token or access_token to connect to GitHub
+  oauth_token = var.devops_token
+  
   # Environment variables - use map attribute, not dynamic block
   environment_variables = var.environment_variables
 
@@ -11,6 +15,7 @@ resource "aws_amplify_app" "main" {
   lifecycle {
     ignore_changes = [
       repository,
+      oauth_token,
     ]
   }
 

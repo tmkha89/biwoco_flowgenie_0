@@ -66,7 +66,8 @@ variable "frontend_environment_variables" {
 }
 
 variable "devops_token" {
-  description = "Github access token"
+  description = "GitHub OAuth token or personal access token for Amplify to access the repository (required for GitHub authentication)"
   type        = string
-  default     = "main"
+  default     = ""
+  sensitive   = true
 }
