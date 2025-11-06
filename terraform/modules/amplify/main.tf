@@ -13,17 +13,19 @@ resource "aws_amplify_app" "main" {
       phases:
         preBuild:
           commands:
+            - cd frontend
             - npm ci
         build:
           commands:
+            - cd frontend
             - npm run build
       artifacts:
-        baseDirectory: dist
+        baseDirectory: frontend/dist
         files:
           - '**/*'
       cache:
         paths:
-          - node_modules/**/*
+          - frontend/node_modules/**/*
   EOF
 
   # Enable auto branch creation
