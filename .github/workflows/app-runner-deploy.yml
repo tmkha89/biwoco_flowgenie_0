@@ -303,6 +303,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.stage || 'dev' }}
     needs: deploy-app-runner
+    triggers: none
     
     steps:
       - name: Checkout code

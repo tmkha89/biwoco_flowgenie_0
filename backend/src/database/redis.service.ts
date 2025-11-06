@@ -67,6 +67,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     // Connect to Redis with timeout to prevent blocking app startup
     // This is critical for App Runner health checks - the app must start quickly
+    this.logger.log('Attempting to connect to Redis...');
+    
     const connectPromise = this.client.connect();
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Redis connection timeout')), 5000)
@@ -80,6 +82,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn('Application will continue to start, but Redis features may be unavailable');
       // Don't throw - allow app to start even if Redis is not ready
       // This is important for App Runner health checks
+    } finally {
+      this.logger.log('Redis connection attempt completed (onModuleInit finished)');
     }
   }
 
