@@ -26,16 +26,38 @@ resource "aws_amplify_app" "main" {
       phases:
         preBuild:
           commands:
+            - echo "Current directory: $(pwd)"
+            - echo "Node.js version: $(node --version)"
+            - echo "npm version: $(npm --version)"
+            - echo "Listing root directory:"
+            - ls -la
+            - echo "Changing to frontend directory..."
             - cd frontend
+            - echo "Current directory after cd: $(pwd)"
+            - echo "Installing dependencies..."
             - npm ci
+            - echo "Dependencies installed successfully"
         build:
           commands:
+            - echo "Building frontend application..."
             - cd frontend
             - npm run build
-            - echo "Verifying _redirects file in dist..."
-            - ls -la dist/ | grep -i redirects || echo "WARNING: _redirects file not found in dist"
-            - if [ -f public/_redirects ]; then cp public/_redirects dist/_redirects && echo "✅ _redirects file copied to dist"; fi
-            - if [ -f dist/_redirects ]; then echo "✅ _redirects file exists in dist:" && cat dist/_redirects; else echo "⚠️ Creating _redirects file in dist..." && echo "/*    /index.html   200" > dist/_redirects && echo "✅ Created _redirects file"; fi
+            - echo "Verifying build output..."
+            - ls -la dist/ || echo "ERROR: dist directory not found"
+            - echo "Checking for _redirects file..."
+            - |
+              if [ -f public/_redirects ]; then
+                echo "✅ Found _redirects in public/, copying to dist/..."
+                cp public/_redirects dist/_redirects
+                echo "✅ _redirects file copied to dist"
+              else
+                echo "⚠️ _redirects not found in public/, creating in dist/..."
+                echo "/*    /index.html   200" > dist/_redirects
+                echo "✅ Created _redirects file"
+              fi
+            - echo "Verifying _redirects file in dist:"
+            - ls -la dist/_redirects && cat dist/_redirects || echo "ERROR: _redirects file not found in dist"
+            - echo "✅ Build completed successfully"
       artifacts:
         baseDirectory: frontend/dist
         files:
